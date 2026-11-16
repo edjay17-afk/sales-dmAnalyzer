@@ -122,10 +122,19 @@ def _valid_date(s):
         return None
 
 
+@app.after_request
+def no_cache_html(resp):
+    if resp.mimetype == 'text/html':
+        resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
 @app.route('/')
 def home():
     con = db.connect()
-    start, end = _default_period(con)
+    dstart, dend = _default_period(con)
+    start = _valid_date(request.args.get('start')) or dstart
+    end = _valid_date(request.args.get('end')) or dend
     return render_template('index.html', cov=db.coverage(con), start=start, end=end, strip=viewmodel.coverage_strip(con))
 
 
@@ -167,7 +176,7 @@ def upload():
     dates = or_dates or bm_dates
     if not dates:
         return redirect(url_for('home'))
-    return redirect(url_for('report', start=min(dates), end=max(dates)))
+    return redirect(url_for('home', start=min(dates), end=max(dates)))
 
 
 def _params():

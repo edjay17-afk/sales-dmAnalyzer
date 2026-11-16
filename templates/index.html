@@ -82,7 +82,7 @@
         <label>To<input type="date" name="end" value="{{ end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
         <button class="btn quiet" type="submit">Open report</button>
       </form>
-      <p class="note">Defaults to the latest 7 days with OR data.</p>
+      <p class="note">{{ 'Pre-filled with the uploaded PDF dates.' if request.args.get('start') else 'Defaults to the latest 7 days with OR data.' }}</p>
     </div>
     {% endif %}
     {% else %}
