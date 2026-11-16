@@ -427,6 +427,10 @@
   document.addEventListener('click', function (e) {
     if (catbox.open && !catbox.contains(e.target)) catbox.open = false;
   });
+  var pf = document.getElementById('pf');
+  if (pf) pf.addEventListener('submit', function () {
+    window.showBusy('Updating report', 'Recalculating sales, BM, and order guide…');
+  });
 })();
 </script>
 {% endblock %}
