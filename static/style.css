@@ -941,8 +941,95 @@ p.empty { margin: 0; padding: 56px 12px; text-align: center; color: var(--ink-2)
 }
 .logout-form { margin: 0; }
 .login-wrap {
-  max-width: 380px;
-  margin: 48px auto;
+  max-width: 780px;
+  margin: clamp(24px, 6vh, 64px) auto;
+}
+.login-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(23, 23, 21, .04);
+}
+@media (max-width: 720px) {
+  .login-grid { grid-template-columns: 1fr; }
+}
+.login-info {
+  background: var(--panel-alt);
+  padding: 26px 26px 24px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 720px) {
+  .login-info { border-right: 0; border-bottom: 1px solid var(--line); }
+}
+.cat-ribbon {
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.cat-ribbon span {
+  height: 4px;
+  border-radius: 1px;
+}
+.login-info h2 {
+  margin: 4px 0 8px;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+.login-desc {
+  margin: 0 0 20px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.login-steps {
+  list-style: none;
+  margin: auto 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.login-steps li {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.step-num {
+  font: 700 11.5px var(--mono);
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  text-align: center;
+  padding: 2px 0;
+}
+.login-steps strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.login-steps span {
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.35;
+}
+.login-panel {
+  border: 0;
+  border-radius: 0;
+  padding: 26px 26px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .login-panel h1 {
   font-size: 20px;
@@ -953,16 +1040,48 @@ p.empty { margin: 0; padding: 56px 12px; text-align: center; color: var(--ink-2)
 }
 .login-form {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 .login-form label {
   display: grid;
-  gap: 4px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .03em;
+  letter-spacing: .04em;
   color: var(--ink-2);
 }
-.login-form input { width: 100%; padding: 8px 10px; font-size: 14px; }
-.login-form .btn { margin-top: 4px; width: 100%; padding: 9px 14px; }
+.login-form input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.login-form input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px rgba(23, 23, 21, .08);
+}
+.pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.pw-wrap input { padding-right: 54px; }
+.pw-toggle {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  font: 600 11.5px var(--ui);
+  color: var(--ink-2);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.pw-toggle:hover { color: var(--ink); background: var(--panel-alt); }
+.login-form .btn {
+  margin-top: 4px;
+  width: 100%;
+  padding: 9px 14px;
+}

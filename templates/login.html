@@ -3,26 +3,81 @@
 
 {% block body %}
 <div class="login-wrap">
-  <section class="panel login-panel" aria-labelledby="login-h">
-    <div class="panel-head">
-      <h1 id="login-h">Sign in</h1>
-      <span class="panel-meta">Store Operations</span>
-    </div>
-    {% if err %}
-    <div class="msg err" role="alert">{{ err }}</div>
-    {% endif %}
-    <form method="post" action="{{ url_for('login') }}" class="login-form">
-      <input type="hidden" name="next" value="{{ next_url }}">
-      <label>
-        Username
-        <input type="text" name="username" value="{{ username }}" autocomplete="username" required autofocus>
-      </label>
-      <label>
-        Password
-        <input type="password" name="password" autocomplete="current-password" required>
-      </label>
-      <button class="btn" type="submit">Sign in</button>
-    </form>
-  </section>
+  <div class="login-grid">
+    <aside class="login-info" aria-label="About this tool">
+      <div class="cat-ribbon" aria-hidden="true">
+        <span style="background:var(--fresh)"></span>
+        <span style="background:var(--hot)"></span>
+        <span style="background:var(--crunch)"></span>
+      </div>
+      <div class="eyebrow">Store Operations</div>
+      <h2>Daily sales &amp; bad merchandise ledger</h2>
+      <p class="login-desc">Track OR Sales Monitor totals against Bad Merchandise write-offs and generate next week&rsquo;s order quantities.</p>
+
+      <ul class="login-steps">
+        <li>
+          <span class="step-num">01</span>
+          <div>
+            <strong>Upload daily PDFs</strong>
+            <span>OR Sales Monitor reports and BM slips are parsed locally.</span>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">02</span>
+          <div>
+            <strong>Spot shrinkage fast</strong>
+            <span>Compare category waste rates against your 31-day baseline.</span>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">03</span>
+          <div>
+            <strong>Export order guides</strong>
+            <span>Download A4 PDF briefs and full product CSVs.</span>
+          </div>
+        </li>
+      </ul>
+    </aside>
+
+    <section class="panel login-panel" aria-labelledby="login-h">
+      <div class="panel-head">
+        <h1 id="login-h">Sign in</h1>
+        <span class="panel-meta">Store account</span>
+      </div>
+      {% if err %}
+      <div class="msg err" role="alert">{{ err }}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('login') }}" class="login-form">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <label>
+          Username
+          <input type="text" name="username" value="{{ username }}" autocomplete="username" required autofocus>
+        </label>
+        <label>
+          Password
+          <div class="pw-wrap">
+            <input type="password" name="password" id="pw" autocomplete="current-password" required>
+            <button type="button" class="pw-toggle" id="pw-toggle" aria-label="Show password">Show</button>
+          </div>
+        </label>
+        <button class="btn" type="submit">Sign in</button>
+      </form>
+    </section>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var pw = document.getElementById('pw'), btn = document.getElementById('pw-toggle');
+  if (!pw || !btn) return;
+  btn.addEventListener('click', function () {
+    var show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'Hide' : 'Show';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
+})();
+</script>
 {% endblock %}
