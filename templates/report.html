@@ -42,7 +42,7 @@
           <summary id="catsum">{% if A.sel is none %}All categories{% elif A.scope_list|length <= 2 %}{{ A.scope_list|join(', ') }}{% else %}{{ A.scope_list|length }} categories{% endif %}</summary>
           <div class="catpanel">
             <input type="search" id="catfind" placeholder="Filter categories…" aria-label="Find a category">
-            <div class="catquick"><button type="button" data-q="clear">All categories</button><button type="button" data-q="hmff">Hot Meals + Fresh Food</button></div>
+            <div class="catquick"><button type="button" data-q="clear">All categories</button><button type="button" data-q="hmff">Hot Meals + Fresh Food</button><button type="button" data-q="hmffct">Hot Meals + Fresh Food + Crunch Time</button></div>
             <div class="catlist" id="catlist">
               {% for g, sales in A.all_groups %}
               <label><input type="checkbox" name="cat" value="{{ g }}" {{ 'checked' if A.sel is not none and g in A.sel }}><span class="cat g-{{ g|gcls }}" title="{{ sales|php(0) }} sales in this period">{{ g }}</span></label>
@@ -149,11 +149,23 @@
 <section class="section" id="topbm" aria-labelledby="h-topbm">
   <h2 id="h-topbm">Top bad merchandise</h2>
   <p class="lead">The 15 products that cost the most when written off, by cost at purchase price. {{ S.top_bm|length }} products had BM in this period.</p>
-  <div class="tblwrap"><table class="tbl">
+  {% if S.top_bm %}
+  <div class="tools section-tools" data-filter-for="tbl-topbm">
+    <input type="search" placeholder="Search top BM…" aria-label="Search top bad merchandise">
+    {% if A.groups|length > 1 %}
+    <select aria-label="Filter top BM by category">
+      <option value="">All categories</option>
+      {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <span class="match-cnt"></span>
+  </div>
+  {% endif %}
+  <div class="tblwrap"><table class="tbl" id="tbl-topbm">
     <thead><tr><th>Product</th><th>Category</th><th></th><th class="r">BM cost</th><th class="r">BM units</th><th class="r">Units sold</th><th class="r">BM / sold</th><th class="r">Baseline BM / sold</th></tr></thead>
     <tbody>
     {% for r in S.top_bm[:15] %}
-    <tr><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter"><i style="width: {{ (100 * r.bmcost / maxes.bm)|round(0) }}%"></i></div></td>
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter"><i style="width: {{ (100 * r.bmcost / maxes.bm)|round(0) }}%"></i></div></td>
       <td class="r">{{ r.bmcost|php }}</td><td class="r">{{ r.bm|n }}</td><td class="r">{{ r.sold|n }}</td>
       <td class="r rate {{ 'hi' if r.sold and r.bm >= r.sold }}">{% if r.sold %}{{ r.bm|pct(r.sold) }}{% else %}no sales{% endif %}</td>
       <td class="r dim">{% if r.inbase %}{{ r.base_bm|n }} / {{ r.base_sold|n }}{% else %}-{% endif %}</td></tr>
@@ -165,10 +177,22 @@
 <section class="section" id="low" aria-labelledby="h-low">
   <h2 id="h-low">Low wastage</h2>
   <p class="lead">Products written off exactly once. Units sold indicate turnover speed. {{ S.low_bm|length }} products in this period.</p>
-  <div class="tblwrap"><table class="tbl">
+  {% if S.low_bm %}
+  <div class="tools section-tools" data-filter-for="tbl-low">
+    <input type="search" placeholder="Search low wastage…" aria-label="Search low wastage products">
+    {% if A.groups|length > 1 %}
+    <select aria-label="Filter low wastage by category">
+      <option value="">All categories</option>
+      {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <span class="match-cnt"></span>
+  </div>
+  {% endif %}
+  <div class="tblwrap"><table class="tbl" id="tbl-low">
     <thead><tr><th>Product</th><th>Category</th><th class="r">BM cost</th><th class="r">BM retail</th><th class="r">Units sold</th></tr></thead>
     <tbody>
-    {% for r in S.low_bm[:30] %}<tr><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="r">{{ r.bmcost|php }}</td><td class="r dim">{{ r.bmretail|php }}</td><td class="r">{{ r.sold|n }}</td></tr>
+    {% for r in S.low_bm[:30] %}<tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="r">{{ r.bmcost|php }}</td><td class="r dim">{{ r.bmretail|php }}</td><td class="r">{{ r.sold|n }}</td></tr>
     {% else %}<tr><td colspan="5" class="dim">None in this period.</td></tr>{% endfor %}
     {% if S.low_bm %}<tr class="tot"><td>All {{ S.low_bm|length }} products</td><td></td><td class="r">{{ (S.low_bm|sum(attribute='bmcost'))|php }}</td><td class="r">{{ (S.low_bm|sum(attribute='bmretail'))|php }}</td><td></td></tr>{% endif %}
     </tbody></table></div>
@@ -178,22 +202,32 @@
 <section class="section" id="selling" aria-labelledby="h-selling">
   <h2 id="h-selling">Top selling</h2>
   <p class="lead">Best sellers ranked by unit volume and by sales value.</p>
-  <h3 class="sub-h" style="margin-top:0">By units sold, top 25</h3>
-  <div class="tblwrap"><table class="tbl">
+  <div class="tools section-tools" data-filter-for="tbl-sell-units,tbl-sell-sales">
+    <input type="search" placeholder="Search top selling…" aria-label="Search top selling products">
+    {% if A.groups|length > 1 %}
+    <select aria-label="Filter top selling by category">
+      <option value="">All categories</option>
+      {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <span class="match-cnt"></span>
+  </div>
+  <h3 class="sub-h" style="margin-top:4px">By units sold, top 25</h3>
+  <div class="tblwrap"><table class="tbl" id="tbl-sell-units">
     <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">Sold</th><th class="r">OR sales</th><th class="r">Days sold</th><th class="r">Per day</th><th class="r">Baseline / day</th><th class="r">BM</th></tr></thead>
     <tbody>
     {% for r in S.top_units[:25] %}
-    <tr><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.sold / maxes.units)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.sold / maxes.units)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
       <td class="r"><b>{{ r.sold|n }}</b></td><td class="r">{{ r.amt|php(0) }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.per_day|n(1) }}</td>
       <td class="r dim">{% if r.inbase and r.base_day is not none %}{{ r.base_day|n(1) }}{% else %}new{% endif %}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
     {% endfor %}
     </tbody></table></div>
   <h3 class="sub-h">By sales value, top 15</h3>
-  <div class="tblwrap"><table class="tbl">
+  <div class="tblwrap"><table class="tbl" id="tbl-sell-sales">
     <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">OR sales</th><th class="r">Sold</th><th class="r">Days sold</th><th class="r">BM</th></tr></thead>
     <tbody>
     {% for r in S.top_sales[:15] %}
-    <tr><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.amt / maxes.sales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.amt / maxes.sales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
       <td class="r"><b>{{ r.amt|php(0) }}</b></td><td class="r">{{ r.sold|n }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
     {% endfor %}
     </tbody></table></div>
@@ -251,17 +285,31 @@
   <h3 class="sub-h">Every product</h3>
   <div class="tools">
     <input type="search" id="q" placeholder="Search products…" aria-label="Search products">
+    {% if A.groups|length > 1 %}
+    <select id="ord-cat" aria-label="Filter products by category">
+      <option value="">All categories</option>
+      {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <select id="ord-sort" aria-label="Sort products">
+      <option value="sold">Sort: Units sold</option>
+      <option value="amt">Sort: OR sales</option>
+      <option value="rate">Sort: Waste rate</option>
+      <option value="order">Sort: Order 7d</option>
+      <option value="name">Sort: Name (A–Z)</option>
+    </select>
     <div class="chips" id="chips">
       <button class="chip" data-f="" aria-pressed="true">All {{ S.full|length|n }}</button>
       {% for a in ['INCREASE', 'HOLD', 'TRIM', 'CUT', 'PAUSE'] %}<button class="chip" data-f="{{ a }}" aria-pressed="false">{{ a|title }} {{ A.rows|selectattr('action', 'equalto', a)|list|length|n }}</button>{% endfor %}
     </div>
+    <span class="match-cnt" id="ord-cnt"></span>
     <a class="csv-link" href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}">Download CSV</a>
   </div>
   <div class="tblwrap"><table class="tbl ordtbl">
     <thead><tr><th>Product</th><th>Category</th><th>Action</th><th class="r">Sold</th><th class="r">OR sales</th><th class="r">BM</th><th class="r">Baseline / wk</th><th class="r">Waste rate</th><th class="r">Order 7d</th></tr></thead>
     <tbody>
     {% for r in S.full %}
-    <tr data-a="{{ r.action }}" data-n="{{ r.name|lower }} {{ r.group|lower }}" {% if loop.index > 300 %}data-late="1" hidden{% endif %}><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td><span class="pill {{ r.action }}">{{ r.action|title }}</span></td>
+    <tr data-a="{{ r.action }}" data-g="{{ r.group|lower }}" data-n="{{ r.name|lower }} {{ r.group|lower }}" data-sold="{{ r.sold }}" data-amt="{{ r.amt }}" data-rate="{{ r.rate }}" data-order="{{ r.order }}" data-name="{{ r.name|lower }}" {% if loop.index > 300 %}data-late="1" hidden{% endif %}><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td><span class="pill {{ r.action }}">{{ r.action|title }}</span></td>
       <td class="r">{{ r.sold|n }}</td><td class="r dim">{{ r.amt|php(0) }}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td>
       <td class="r dim">{{ r.base_wk|n(1) if r.inbase else 'new' }}</td><td class="r rate {{ 'hi' if r.rate >= 0.25 }}">{{ (100 * r.rate)|n }}%</td><td class="r"><span class="tag sm">{{ r.order }}</span></td></tr>
     {% endfor %}
@@ -294,16 +342,59 @@
 {% block scripts %}
 <script>
 (function () {
-  var f = '', q = '', all = false;
-  var rows = document.querySelectorAll('.ordtbl tbody tr[data-a]');
+  // Per-section table search & category filters (Top BM, Low wastage, Top selling)
+  document.querySelectorAll('.section-tools[data-filter-for]').forEach(function (bar) {
+    var ids = bar.dataset.filterFor.split(',');
+    var tables = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    var inp = bar.querySelector('input[type=search]');
+    var sel = bar.querySelector('select');
+    var cnt = bar.querySelector('.match-cnt');
+    function filterSection() {
+      var q = inp ? inp.value.trim().toLowerCase() : '';
+      var g = sel ? sel.value : '';
+      var active = !!(q || g);
+      var shown = 0, total = 0;
+      tables.forEach(function (tbl) {
+        tbl.querySelectorAll('tbody tr[data-n]').forEach(function (tr) {
+          total++;
+          var ok = (!q || tr.dataset.n.indexOf(q) !== -1 || tr.dataset.g.indexOf(q) !== -1) && (!g || tr.dataset.g === g);
+          tr.hidden = !ok;
+          if (ok) shown++;
+        });
+      });
+      if (cnt) cnt.textContent = active ? (shown + ' of ' + total + ' shown') : '';
+    }
+    if (inp) inp.addEventListener('input', filterSection);
+    if (sel) sel.addEventListener('change', filterSection);
+  });
+
+  // Every product: action chips, search, category filter, and sort
+  var f = '', q = '', cat = '', all = false;
+  var tbody = document.querySelector('.ordtbl tbody');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.ordtbl tbody tr[data-a]'));
+  var cntEl = document.getElementById('ord-cnt');
   function apply() {
-    var shown = 0, filtering = !!(f || q);
-    rows.forEach(function (tr) {
-      var ok = (!f || tr.dataset.a === f) && (!q || tr.dataset.n.indexOf(q) !== -1) && (filtering || all || !tr.dataset.late);
-      tr.hidden = !ok; if (ok) shown++;
+    var shown = 0, matched = 0, filtering = !!(f || q || cat);
+    rows.forEach(function (tr, idx) {
+      var m = (!f || tr.dataset.a === f) && (!cat || tr.dataset.g === cat) && (!q || tr.dataset.n.indexOf(q) !== -1);
+      if (m) matched++;
+      var ok = m && (filtering || all || idx < 300);
+      tr.hidden = !ok;
+      if (ok) shown++;
     });
     document.getElementById('nomatch').hidden = shown > 0;
     var b = document.getElementById('showall'); if (b) b.hidden = all || filtering;
+    if (cntEl) cntEl.textContent = filtering ? (matched + ' of ' + rows.length + ' match') : '';
+  }
+  function sortRows(by) {
+    rows.sort(function (a, b) {
+      if (by === 'name') return a.dataset.name.localeCompare(b.dataset.name);
+      return parseFloat(b.dataset[by] || 0) - parseFloat(a.dataset[by] || 0);
+    });
+    var frag = document.createDocumentFragment();
+    rows.forEach(function (tr) { frag.appendChild(tr); });
+    tbody.appendChild(frag);
+    apply();
   }
   document.getElementById('chips').addEventListener('click', function (e) {
     var b = e.target.closest('.chip'); if (!b) return;
@@ -311,6 +402,10 @@
     f = b.dataset.f; apply();
   });
   document.getElementById('q').addEventListener('input', function (e) { q = e.target.value.trim().toLowerCase(); apply(); });
+  var ordCat = document.getElementById('ord-cat');
+  if (ordCat) ordCat.addEventListener('change', function (e) { cat = e.target.value; apply(); });
+  var ordSort = document.getElementById('ord-sort');
+  if (ordSort) ordSort.addEventListener('change', function (e) { sortRows(e.target.value); });
   var sa = document.getElementById('showall'); if (sa) sa.addEventListener('click', function () { all = true; apply(); });
   var boxes = document.querySelectorAll('#catlist input[type=checkbox]'), sum = document.getElementById('catsum'), catbox = document.getElementById('catbox');
   function summary() {
@@ -320,7 +415,8 @@
   boxes.forEach(function (b) { b.addEventListener('change', summary); });
   document.querySelector('.catquick').addEventListener('click', function (e) {
     var q = e.target.dataset.q; if (!q) return;
-    boxes.forEach(function (b) { b.checked = q === 'hmff' && (b.value === 'Hot Meals' || b.value === 'Fresh Food'); });
+    var pick = q === 'hmff' ? ['Hot Meals', 'Fresh Food'] : q === 'hmffct' ? ['Hot Meals', 'Fresh Food', 'Crunch Time'] : [];
+    boxes.forEach(function (b) { b.checked = pick.indexOf(b.value) !== -1; });
     summary();
   });
   document.getElementById('catfind').addEventListener('input', function (e) {
