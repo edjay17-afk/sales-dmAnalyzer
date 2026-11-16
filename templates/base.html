@@ -4,13 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}BM &amp; Sales Analyzer{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="{{ url_for('home') }}">
-      <span class="brand-mark" aria-hidden="true"></span>
+      <svg class="brand-logo" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="4" fill="#171715"/>
+        <rect x="6" y="16" width="5" height="10" rx="1" fill="#167442"/>
+        <rect x="13.5" y="10" width="5" height="16" rx="1" fill="#c84b18"/>
+        <rect x="21" y="6" width="5" height="20" rx="1" fill="#e09f1f"/>
+      </svg>
       <span>BM &amp; Sales Analyzer</span>
     </a>
     {% block nav %}{% endblock %}
