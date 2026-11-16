@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Analysis {{ A.label }}{% endblock %}
+
+{% block nav %}
+<nav class="nav" aria-label="Sections">
+  <a href="#overview">Overview</a>
+  <a href="#topbm">Top BM</a>
+  <a href="#low">Low wastage</a>
+  <a href="#selling">Top selling</a>
+  <a href="#orders">Orders</a>
+</nav>
+{% endblock %}
+
+{% block header_actions %}
+<a class="btn sm" href="{{ url_for('report_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Download PDF</a>
+<a class="btn quiet sm" href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}">Export CSV</a>
+<a class="btn quiet sm" href="{{ url_for('home') }}">Upload PDFs</a>
+{% endblock %}
+
+{% macro catlabel(g) %}<span class="cat g-{{ g|gcls }}">{{ g }}</span>{% endmacro %}
+
+{% block body %}
+<section id="overview" aria-labelledby="h-overview">
+  <div class="report-head">
+    <div class="report-title">
+      <div class="eyebrow">
+        <span>Period Report</span>
+        <span class="sep">/</span>
+        <span class="scope">{% if A.sel is none %}All {{ A.groups|length }} categories{% else %}{{ A.scope_list|join(', ') if A.scope_list|length <= 6 else A.scope_label }}{% if A.groups|length > 1 %} ({{ A.groups|length }} categories){% endif %}{% endif %}</span>
+      </div>
+      <h1 id="h-overview">{{ A.label }}</h1>
+      <p class="verdict">{{ head_title }}</p>
+      <p class="verdict-sub">{{ head_sub }}</p>
+    </div>
+
+    <form class="filterbar" method="get" id="pf">
+      <label>From<input type="date" name="start" value="{{ A.start }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+      <label>To<input type="date" name="end" value="{{ A.end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+      <div class="catpick">
+        <span class="lbl">Categories</span>
+        <details class="catbox" id="catbox">
+          <summary id="catsum">{% if A.sel is none %}All categories{% elif A.scope_list|length <= 2 %}{{ A.scope_list|join(', ') }}{% else %}{{ A.scope_list|length }} categories{% endif %}</summary>
+          <div class="catpanel">
+            <input type="search" id="catfind" placeholder="Filter categories…" aria-label="Find a category">
+            <div class="catquick"><button type="button" data-q="clear">All categories</button><button type="button" data-q="hmff">Hot Meals + Fresh Food</button></div>
+            <div class="catlist" id="catlist">
+              {% for g, sales in A.all_groups %}
+              <label><input type="checkbox" name="cat" value="{{ g }}" {{ 'checked' if A.sel is not none and g in A.sel }}><span class="cat g-{{ g|gcls }}" title="{{ sales|php(0) }} sales in this period">{{ g }}</span></label>
+              {% endfor %}
+            </div>
+            <p class="hint">Leave all unticked to include every category.</p>
+          </div>
+        </details>
+      </div>
+      <button class="btn quiet" type="submit">Update</button>
+    </form>
+  </div>
+
+  <div class="ledger">
+    {% for k in kpis %}
+    <div class="fig">
+      <div class="l">{{ k.label }}</div>
+      <div class="v">{{ k.value }}</div>
+      <div class="s">{{ k.sub }}</div>
+      {% if k.delta %}<div class="delta {{ k.delta.tone }}">{{ k.delta.text }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <details class="notes" {{ 'open' if A.notes }}>
+    <summary>Data notes and assumptions {% if A.notes %}<span class="cnt">{{ A.notes|length }} to check</span>{% endif %}</summary>
+    <ul>
+      {% for x in A.notes %}<li class="warn">{{ x }}</li>{% endfor %}
+      <li><b>Categories.</b> Every OR category is analysed. Hot Meals are category 39 Rice Meals and Fresh Food is categories 43 and 46 combined, as in the October reports. Other categories keep their OR names. BM slips carry no category, so each BM product takes the category it is sold under on the OR reports.</li>
+      <li><b>Checks.</b> Each OR report is tied to its printed category totals and grand total, and each BM slip to its printed total.{% if A.base %} The baseline is the {{ A.base_days }} days of OR history before this period ({{ A.base_range[0] }} to {{ A.base_range[1] }}).{% endif %} Products are matched between OR and BM by item code. Expense items (free stickers and similar) are not counted.</li>
+      <li><b>Reading BM against sales.</b> BM comes from earlier deliveries, so a product can show more BM than units sold in the same period. BM % on products selling under 5 a week swings widely, so treat those as flags.</li>
+      <li><b>Order suggestions.</b> A small buffer above demand (Increase) is only suggested for short shelf life categories: Crunch Time, Rice Meals, Fresh Foods, Hot Foods, Bread and Bakery, Donuts, Dairy, Hotdog and City Cafe. Everything else is ordered at demand, trimmed or cut where there is real BM. There is no stock or delivery data, so count what is on hand before ordering.</li>
+    </ul>
+  </details>
+
+  <div class="charts">
+    <div class="chartbox">
+      <div class="charthead">
+        <h4>Daily OR sales (PHP)</h4>
+        <div class="key">{% for s, c in legend %}<span class="k-{{ s|gcls }}"><i></i>{{ s }}</span>{% endfor %}</div>
+      </div>
+      {{ sales_svg|safe }}
+    </div>
+    <div class="chartbox">
+      <div class="charthead">
+        <h4>Daily BM cost (PHP)</h4>
+        <div class="key">{% for s, c in legend %}<span class="k-{{ s|gcls }}"><i></i>{{ s }}</span>{% endfor %}</div>
+      </div>
+      {{ bm_svg|safe }}
+    </div>
+  </div>
+
+  <h3 class="sub-h">What stands out</h3>
+  <ul class="points">{% for b in A.bullets %}<li>{{ b|safe }}</li>{% endfor %}</ul>
+
+  <h3 class="sub-h">By category</h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Category</th><th class="r">Products</th><th class="r">Units</th><th class="r">OR sales</th><th></th><th class="r">BM units</th><th class="r">BM cost</th><th class="r">BM % units</th><th class="r">BM % sales*</th><th class="r">Base BM %</th></tr></thead>
+    <tbody>
+    {% for g in A.groups %}{% set t = A.tot[g] %}
+    <tr><td>{{ catlabel(g) }}</td><td class="r">{{ t.skus|n }}</td><td class="r">{{ t.units|n }}</td><td class="r">{{ t.sales|php(0) }}</td>
+      <td class="meterc"><div class="meter g-{{ g|gcls }}"><i style="width: {{ (100 * t.sales / maxes.catsales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+      <td class="r">{{ t.bmu|n }}</td><td class="r">{{ t.bmc|php }}</td>
+      <td class="r">{{ t.bmu|pct(t.units) }}</td><td class="r">{{ t.bmr|pct(t.sales) }}</td><td class="r dim">{% if A.base and g in A.base.groups %}{{ A.base.groups[g].bmu|pct(A.base.groups[g].units) }}{% else %}-{% endif %}</td></tr>
+    {% endfor %}
+    <tr class="tot"><td>Total</td><td class="r">{{ A.T.skus|n }}</td><td class="r">{{ A.T.units|n }}</td><td class="r">{{ A.T.sales|php(0) }}</td><td></td><td class="r">{{ A.T.bmu|n }}</td><td class="r">{{ A.T.bmc|php }}</td>
+      <td class="r">{{ A.T.bmu|pct(A.T.units) }}</td><td class="r">{{ A.T.bmr|pct(A.T.sales) }}</td><td class="r">{% if A.base %}{{ A.base.T.bmu|pct(A.base.T.units) }}{% else %}-{% endif %}</td></tr>
+    </tbody></table></div>
+  <p class="note">*BM retail value divided by OR sales, both at selling price. Ordered by sales.</p>
+
+  <div class="twochart" style="margin-top: 28px;">
+    <div>
+      <h3 class="sub-h" style="margin-top:0">Against the previous {{ A.n_cal }} days and baseline</h3>
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>Metric</th><th class="r">This period</th><th class="r">Previous</th><th class="r">Change</th><th class="r">Baseline</th></tr></thead>
+        <tbody>
+        {% for key, lbl, money in [('units', 'Units sold', false), ('sales', 'OR sales', true), ('bmu', 'BM units', false), ('bmc', 'BM cost', true)] %}
+          {% set cur = A.T[key] %}{% set pv = A.prev.T[key] if A.prev else none %}{% set bl = (A.base.T_wk[key] * A.n / 7) if A.base else none %}
+          <tr><td>{{ lbl }}</td>
+            <td class="r">{{ (cur|php(0)) if money else (cur|n) }}</td>
+            <td class="r dim">{% if pv is not none %}{{ (pv|php(0)) if money else (pv|n) }}{% else %}-{% endif %}</td>
+            <td class="r">{% if pv %}{{ '%+.1f%%'|format(100 * (cur - pv) / pv) }}{% else %}-{% endif %}</td>
+            <td class="r dim">{% if bl is not none %}{{ (bl|php(0)) if money else (bl|n) }}{% else %}-{% endif %}</td></tr>
+        {% endfor %}
+        </tbody></table></div>
+      <p class="note">Previous period is the {{ A.n_cal }} days before start{% if A.prev %} ({{ A.prev.days }} with OR data){% else %}, no OR data on file{% endif %}. Baseline is scaled to the same length.</p>
+    </div>
+
+    <div>
+      <h3 class="sub-h" style="margin-top:0">Day by day</h3>
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>Date</th><th class="r">Units</th><th class="r">OR sales</th><th class="r">BM units</th><th class="r">BM cost</th><th class="r">BM %</th></tr></thead>
+        <tbody>
+        {% for d in A.daily %}
+        <tr><td>{{ d.wd }} {{ d.label }}</td><td class="r">{% if d.has_or %}{{ d.units|n }}{% else %}<span class="dim">no OR</span>{% endif %}</td><td class="r">{% if d.has_or %}{{ d.sales_total|php(0) }}{% else %}<span class="dim">no OR</span>{% endif %}</td>
+          <td class="r">{{ d.bmu|n }}</td><td class="r">{{ d.bmc_total|php }}</td><td class="r">{{ d.bmr|pct(d.sales_total) }}</td></tr>
+        {% endfor %}
+        <tr class="tot"><td>Total ({{ A.n }}d)</td><td class="r">{{ A.T.units|n }}</td><td class="r">{{ A.T.sales|php(0) }}</td><td class="r">{{ A.T.bmu|n }}</td><td class="r">{{ A.T.bmc|php }}</td><td class="r">{{ A.T.bmr|pct(A.T.sales) }}</td></tr>
+        </tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="topbm" aria-labelledby="h-topbm">
+  <h2 id="h-topbm">Top bad merchandise</h2>
+  <p class="lead">The 15 products that cost the most when written off, by cost at purchase price. {{ S.top_bm|length }} products had BM in this period.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Product</th><th>Category</th><th></th><th class="r">BM cost</th><th class="r">BM units</th><th class="r">Units sold</th><th class="r">BM / sold</th><th class="r">Baseline BM / sold</th></tr></thead>
+    <tbody>
+    {% for r in S.top_bm[:15] %}
+    <tr><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter"><i style="width: {{ (100 * r.bmcost / maxes.bm)|round(0) }}%"></i></div></td>
+      <td class="r">{{ r.bmcost|php }}</td><td class="r">{{ r.bm|n }}</td><td class="r">{{ r.sold|n }}</td>
+      <td class="r rate {{ 'hi' if r.sold and r.bm >= r.sold }}">{% if r.sold %}{{ r.bm|pct(r.sold) }}{% else %}no sales{% endif %}</td>
+      <td class="r dim">{% if r.inbase %}{{ r.base_bm|n }} / {{ r.base_sold|n }}{% else %}-{% endif %}</td></tr>
+    {% else %}<tr><td colspan="8" class="dim">No BM in this period.</td></tr>{% endfor %}
+    </tbody></table></div>
+  <p class="note">Red indicates BM units equal or exceed units sold in this period. Baseline covers the 31 days prior.</p>
+</section>
+
+<section class="section" id="low" aria-labelledby="h-low">
+  <h2 id="h-low">Low wastage</h2>
+  <p class="lead">Products written off exactly once. Units sold indicate turnover speed. {{ S.low_bm|length }} products in this period.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Product</th><th>Category</th><th class="r">BM cost</th><th class="r">BM retail</th><th class="r">Units sold</th></tr></thead>
+    <tbody>
+    {% for r in S.low_bm[:30] %}<tr><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="r">{{ r.bmcost|php }}</td><td class="r dim">{{ r.bmretail|php }}</td><td class="r">{{ r.sold|n }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">None in this period.</td></tr>{% endfor %}
+    {% if S.low_bm %}<tr class="tot"><td>All {{ S.low_bm|length }} products</td><td></td><td class="r">{{ (S.low_bm|sum(attribute='bmcost'))|php }}</td><td class="r">{{ (S.low_bm|sum(attribute='bmretail'))|php }}</td><td></td></tr>{% endif %}
+    </tbody></table></div>
+  {% if S.low_bm|length > 30 %}<p class="note">Showing the 30 costliest of {{ S.low_bm|length }}. Download the CSV for the complete list.</p>{% endif %}
+</section>
+
+<section class="section" id="selling" aria-labelledby="h-selling">
+  <h2 id="h-selling">Top selling</h2>
+  <p class="lead">Best sellers ranked by unit volume and by sales value.</p>
+  <h3 class="sub-h" style="margin-top:0">By units sold, top 25</h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">Sold</th><th class="r">OR sales</th><th class="r">Days sold</th><th class="r">Per day</th><th class="r">Baseline / day</th><th class="r">BM</th></tr></thead>
+    <tbody>
+    {% for r in S.top_units[:25] %}
+    <tr><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.sold / maxes.units)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+      <td class="r"><b>{{ r.sold|n }}</b></td><td class="r">{{ r.amt|php(0) }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.per_day|n(1) }}</td>
+      <td class="r dim">{% if r.inbase and r.base_day is not none %}{{ r.base_day|n(1) }}{% else %}new{% endif %}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  <h3 class="sub-h">By sales value, top 15</h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">OR sales</th><th class="r">Sold</th><th class="r">Days sold</th><th class="r">BM</th></tr></thead>
+    <tbody>
+    {% for r in S.top_sales[:15] %}
+    <tr><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.amt / maxes.sales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+      <td class="r"><b>{{ r.amt|php(0) }}</b></td><td class="r">{{ r.sold|n }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+</section>
+
+<section class="section" id="orders" aria-labelledby="h-orders">
+  <h2 id="h-orders">Order suggestions for the next 7 days</h2>
+  <p class="lead">Estimated from this period's sales and BM against each product's prior 31 days. Count stock on hand before placing orders.</p>
+
+  <div class="brief">
+    <div class="col inc">
+      <h4>Increase <span>{{ brief.inc|length }}</span></h4>
+      <p>Short shelf life, steady sales, minimal waste. Order ~10% above demand.</p>
+      <ul>{% for r in brief.inc[:6] %}
+        <li><div class="n">{{ r.name }}<small>{{ r.group }} &middot; sold {{ r.sold|n }} &middot; avg {{ r.base_wk|n(1) if r.inbase else 'new' }}/wk</small></div><div class="q"><span class="tag sm">{{ r.order }}</span></div></li>
+      {% else %}<li class="dim">None this period.</li>{% endfor %}</ul>
+      {% if brief.inc|length > 6 %}<div class="more">+ {{ brief.inc|length - 6 }} more in the full list below</div>{% endif %}
+    </div>
+    <div class="col cut">
+      <h4>Trim or cut <span>{{ brief.tc|length }}</span></h4>
+      <p>Elevated write-offs. Reduce order below prior received volume.</p>
+      <ul>{% for r in brief.tc[:6] %}
+        <li><div class="n">{{ r.name }}<small>{{ r.group }} &middot; {{ r.bm|n }} BM / {{ r.sold|n }} sold ({{ (100 * r.rate)|n }}% waste)</small></div><div class="q"><span class="tag sm">{{ r.order }}</span><small>was ~{{ (r.est_received * 7 / A.n)|n }}</small></div></li>
+      {% else %}<li class="dim">None this period.</li>{% endfor %}</ul>
+      {% if brief.tc|length > 6 %}<div class="more">+ {{ brief.tc|length - 6 }} more in the full list below</div>{% endif %}
+    </div>
+    <div class="col pz">
+      <h4>Pause and check <span>{{ brief.pz|length }}</span></h4>
+      <p>Zero sales with write-offs recorded. Hold order until checked.</p>
+      <ul>{% for r in brief.pz[:6] %}
+        <li><div class="n">{{ r.name }}<small>{{ r.group }} &middot; {{ r.bm|n }} BM &middot; {{ r.bmcost|php }}</small></div><div class="q"><span class="pill PAUSE">Hold</span></div></li>
+      {% else %}<li class="dim">None this period.</li>{% endfor %}</ul>
+      {% if brief.pz|length > 6 %}<div class="more">+ {{ brief.pz|length - 6 }} more in the full list below</div>{% endif %}
+    </div>
+  </div>
+
+  <h3 class="sub-h">Suggested order by category</h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Category</th><th class="r">Products sold</th><th class="r">Expected weekly demand</th><th class="r">Suggested order (7d)</th><th class="r">Est. received last period</th><th class="r">Change</th></tr></thead>
+    <tbody>
+    {% for g, x in cat_orders %}
+    <tr><td>{{ catlabel(g) }}</td><td class="r">{{ x.products|n }}</td><td class="r">{{ x.demand|n }}</td><td class="r"><b>{{ x.order|n }}</b></td>
+      <td class="r dim">{% if x.perishable %}{{ x.est|n }}{% else %}-{% endif %}</td><td class="r">{% if x.perishable and x.est %}{{ '%+.1f%%'|format(100 * (x.order - x.est) / x.est) }}{% else %}-{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  <p class="note">Est. received (units sold + BM) assumes stable stock on hand and is shown only for short shelf-life categories.</p>
+
+  <h3 class="sub-h">Day-of-week guide</h3>
+  <p class="note" style="margin-top:0">Averages over the last {{ A.weekday_days }} OR days for {{ A.scope_label|lower }}. Use to shape daily par levels.</p>
+  <div class="twochart" style="margin-top:12px">
+    <div class="chartbox"><div class="charthead"><h4>Units sold</h4></div>{{ wk_units_svg|safe }}</div>
+    <div class="chartbox"><div class="charthead"><h4>OR sales (PHP)</h4></div>{{ wk_sales_svg|safe }}</div>
+  </div>
+
+  <h3 class="sub-h">Every product</h3>
+  <div class="tools">
+    <input type="search" id="q" placeholder="Search products…" aria-label="Search products">
+    <div class="chips" id="chips">
+      <button class="chip" data-f="" aria-pressed="true">All {{ S.full|length|n }}</button>
+      {% for a in ['INCREASE', 'HOLD', 'TRIM', 'CUT', 'PAUSE'] %}<button class="chip" data-f="{{ a }}" aria-pressed="false">{{ a|title }} {{ A.rows|selectattr('action', 'equalto', a)|list|length|n }}</button>{% endfor %}
+    </div>
+    <a class="csv-link" href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}">Download CSV</a>
+  </div>
+  <div class="tblwrap"><table class="tbl ordtbl">
+    <thead><tr><th>Product</th><th>Category</th><th>Action</th><th class="r">Sold</th><th class="r">OR sales</th><th class="r">BM</th><th class="r">Baseline / wk</th><th class="r">Waste rate</th><th class="r">Order 7d</th></tr></thead>
+    <tbody>
+    {% for r in S.full %}
+    <tr data-a="{{ r.action }}" data-n="{{ r.name|lower }} {{ r.group|lower }}" {% if loop.index > 300 %}data-late="1" hidden{% endif %}><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td><span class="pill {{ r.action }}">{{ r.action|title }}</span></td>
+      <td class="r">{{ r.sold|n }}</td><td class="r dim">{{ r.amt|php(0) }}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td>
+      <td class="r dim">{{ r.base_wk|n(1) if r.inbase else 'new' }}</td><td class="r rate {{ 'hi' if r.rate >= 0.25 }}">{{ (100 * r.rate)|n }}%</td><td class="r"><span class="tag sm">{{ r.order }}</span></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  <p class="note" id="nomatch" hidden>No products match.</p>
+  {% if S.full|length > 300 %}<button class="btn quiet more-btn" type="button" id="showall">Show all {{ S.full|length|n }} products</button>{% endif %}
+
+  {% if A.notsold %}
+  <h3 class="sub-h">Regular sellers with no sales in this period</h3>
+  <p class="note" style="margin-top:0">{{ A.notsold|length|n }} products that sold on 6+ days in the baseline but had zero sales in this period. Verify listing and stock status before reordering.</p>
+  <div class="tblwrap" style="margin-top:10px"><table class="tbl">
+    <thead><tr><th>Product</th><th>Category</th><th class="r">Baseline units</th><th class="r">Baseline days sold</th><th class="r">Baseline BM</th><th class="r">Previous period</th></tr></thead>
+    <tbody>{% for x in A.notsold[:15] %}<tr><td class="name">{{ x.name }}</td><td>{{ catlabel(x.group) }}</td><td class="r">{{ x.base_units|n }}</td><td class="r dim">{{ x.base_days }}/{{ A.base_days }}</td><td class="r">{{ x.base_bm|n }}</td><td class="r dim">{{ x.prev|n }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if A.notsold|length > 15 %}<p class="note">Showing top 15 of {{ A.notsold|length|n }} by baseline units.</p>{% endif %}
+  {% endif %}
+
+  <details class="notes" style="margin-top:24px">
+    <summary>How order numbers are calculated</summary>
+    <ul>
+      <li>Expected weekly demand is the average of this period's units sold (scaled to 7 days) and the product's baseline weekly rate over the prior 31 days. Products that started later are counted from their first sale; new products use this period only.</li>
+      <li>The waste rate is BM divided by (units sold + BM), blended with the baseline.</li>
+      <li><b>Increase:</b> short shelf life category, waste under 3% and 5+ units/week; order demand + 10%. <b>Hold:</b> order demand. <b>Trim:</b> waste 10% to 25%; demand &minus; 15%. <b>Cut:</b> waste 25%+ with BM in period; demand &minus; 30%. <b>Pause:</b> zero sales; do not reorder until checked.</li>
+      <li>If a product sits on a fixed display minimum, lower the minimum rather than the order.</li>
+    </ul>
+  </details>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var f = '', q = '', all = false;
+  var rows = document.querySelectorAll('.ordtbl tbody tr[data-a]');
+  function apply() {
+    var shown = 0, filtering = !!(f || q);
+    rows.forEach(function (tr) {
+      var ok = (!f || tr.dataset.a === f) && (!q || tr.dataset.n.indexOf(q) !== -1) && (filtering || all || !tr.dataset.late);
+      tr.hidden = !ok; if (ok) shown++;
+    });
+    document.getElementById('nomatch').hidden = shown > 0;
+    var b = document.getElementById('showall'); if (b) b.hidden = all || filtering;
+  }
+  document.getElementById('chips').addEventListener('click', function (e) {
+    var b = e.target.closest('.chip'); if (!b) return;
+    document.querySelectorAll('#chips .chip').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    f = b.dataset.f; apply();
+  });
+  document.getElementById('q').addEventListener('input', function (e) { q = e.target.value.trim().toLowerCase(); apply(); });
+  var sa = document.getElementById('showall'); if (sa) sa.addEventListener('click', function () { all = true; apply(); });
+  var boxes = document.querySelectorAll('#catlist input[type=checkbox]'), sum = document.getElementById('catsum'), catbox = document.getElementById('catbox');
+  function summary() {
+    var on = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).map(function (b) { return b.value; });
+    sum.textContent = !on.length ? 'All categories' : on.length <= 2 ? on.join(', ') : on.length + ' categories';
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', summary); });
+  document.querySelector('.catquick').addEventListener('click', function (e) {
+    var q = e.target.dataset.q; if (!q) return;
+    boxes.forEach(function (b) { b.checked = q === 'hmff' && (b.value === 'Hot Meals' || b.value === 'Fresh Food'); });
+    summary();
+  });
+  document.getElementById('catfind').addEventListener('input', function (e) {
+    var t = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#catlist label').forEach(function (l) { l.hidden = t && l.textContent.toLowerCase().indexOf(t) === -1; });
+  });
+  document.getElementById('catfind').addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  document.addEventListener('click', function (e) {
+    if (catbox.open && !catbox.contains(e.target)) catbox.open = false;
+  });
+})();
+</script>
+{% endblock %}

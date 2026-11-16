@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}BM &amp; Sales Analyzer{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="{{ url_for('home') }}">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>BM &amp; Sales Analyzer</span>
+    </a>
+    {% block nav %}{% endblock %}
+    <div class="topbar-actions">
+      {% block header_actions %}{% endblock %}
+      {% if session.get('user') %}
+      <span class="user-badge">{{ session['user'] }}</span>
+      <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+        <button class="btn quiet sm" type="submit">Sign out</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</header>
+<main class="main">
+  <div class="page">
+    {% with m = get_flashed_messages() %}{% if m %}
+    <div class="msgs" role="status">{% for kind, text in m %}<div class="msg {{ kind }}">{{ text }}</div>{% endfor %}</div>
+    {% endif %}{% endwith %}
+    {% block body %}{% endblock %}
+  </div>
+</main>
+<div class="overlay" id="busy" role="alert" aria-live="polite">
+  <div class="box">
+    <div class="spin"></div>
+    <b>Reading your PDFs</b>
+    <span>This takes about 2 seconds per OR report.</span>
+  </div>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

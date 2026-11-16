@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}BM &amp; Sales Analyzer{% endblock %}
+{% block header_actions %}
+{% if start %}
+<a class="btn quiet sm" href="{{ url_for('report', start=start, end=end) }}">Latest report</a>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="page-head">
+  <h1>Upload weekly reports</h1>
+  <p class="verdict-sub">Add OR Sales Monitor and Bad Merchandise PDFs in any order. Reports are parsed locally and added to your store history.</p>
+</div>
+
+<div class="home-grid">
+  <section class="panel" aria-labelledby="upload-h">
+    <div class="panel-head">
+      <h2 id="upload-h">Add PDFs</h2>
+      <span class="panel-meta">OR daily reports &amp; BM slips</span>
+    </div>
+    <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" id="upform">
+      <label class="drop" id="drop" for="files">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <polyline points="9 15 12 12 15 15"/>
+        </svg>
+        <strong>Drop PDFs here or click to browse</strong>
+        <span>One OR Sales Monitor report per day; any number of BM slips.</span>
+        <input type="file" name="files" id="files" accept="application/pdf,.pdf" multiple>
+      </label>
+      <div class="picked">
+        <button class="btn" type="submit" id="go" disabled>Analyze PDFs</button>
+        <span class="cnt" id="count"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" aria-labelledby="onfile-h">
+    <div class="panel-head">
+      <h2 id="onfile-h">History on file</h2>
+      {% if cov.or_days %}<span class="panel-meta">{{ cov.or_min|dfmt }} – {{ cov.or_max|dfmt }}</span>{% endif %}
+    </div>
+    {% if cov.or_days %}
+    <div class="facts">
+      <div class="f">
+        <span class="f-lbl">OR sales days</span>
+        <b>{{ cov.or_days }}</b>
+        <span>{{ cov.or_min|dfmt }} to {{ cov.or_max|dfmt }}</span>
+      </div>
+      <div class="f">
+        <span class="f-lbl">BM slips</span>
+        <b>{{ cov.bm_slips }}</b>
+        <span>{{ cov.bm_min|dfmt }} to {{ cov.bm_max|dfmt }}</span>
+      </div>
+    </div>
+
+    {% if strip %}
+    <div class="strip-wrap">
+      <div class="strip" role="img" aria-label="Calendar of days with OR sales on file">
+        {% for c in strip.cells %}{% if c %}<i class="{{ 'on' if c['or'] else 'gap' }}" title="{{ c.label }}: {{ 'OR on file' if c['or'] else 'no OR report' }}{{ ', ' ~ c.bm ~ ' BM slip(s)' if c.bm }}"></i>{% else %}<i class="e"></i>{% endif %}{% endfor %}
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--fresh)"></i>OR on file</span>
+        <span><i style="border:1.5px solid var(--waste)"></i>Missing OR</span>
+        <span>{{ strip.start }} – {{ strip.end }} (Mon–Sun)</span>
+      </div>
+    </div>
+    {% if strip.missing %}
+    <p class="note warn-note">{{ strip.missing|length }} day(s) in this range have no OR report. Upload them to complete the history.</p>
+    {% endif %}
+    {% endif %}
+
+    <p class="note">Order suggestions compare each period against the prior 31 days. Re-uploading a day or slip replaces its previous entry.</p>
+
+    {% if start %}
+    <div class="openbar">
+      <h3>Open report for dates on file</h3>
+      <form method="get" action="{{ url_for('report') }}">
+        <label>From<input type="date" name="start" value="{{ start }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+        <label>To<input type="date" name="end" value="{{ end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+        <button class="btn quiet" type="submit">Open report</button>
+      </form>
+      <p class="note">Defaults to the latest 7 days with OR data.</p>
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="note">No data on file yet. Upload your first PDFs on the left to get started.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var f = document.getElementById('files'), d = document.getElementById('drop'), go = document.getElementById('go'), cnt = document.getElementById('count');
+function show() {
+  var n = f.files.length;
+  cnt.textContent = n ? n + ' PDF' + (n > 1 ? 's' : '') + ' selected' : '';
+  go.disabled = !n;
+}
+f.addEventListener('change', show);
+['dragenter', 'dragover'].forEach(function (e) { d.addEventListener(e, function (ev) { ev.preventDefault(); d.classList.add('over'); }); });
+['dragleave', 'drop'].forEach(function (e) { d.addEventListener(e, function (ev) { ev.preventDefault(); d.classList.remove('over'); }); });
+d.addEventListener('drop', function (ev) {
+  var dt = new DataTransfer();
+  for (var i = 0; i < ev.dataTransfer.files.length; i++) { var x = ev.dataTransfer.files[i]; if (x.name.toLowerCase().endsWith('.pdf')) dt.items.add(x); }
+  f.files = dt.files; show();
+});
+document.getElementById('upform').addEventListener('submit', function () { document.getElementById('busy').classList.add('show'); });
+</script>
+{% endblock %}

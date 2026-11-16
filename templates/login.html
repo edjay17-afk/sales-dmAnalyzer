@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Sign in — BM &amp; Sales Analyzer{% endblock %}
+
+{% block body %}
+<div class="login-wrap">
+  <section class="panel login-panel" aria-labelledby="login-h">
+    <div class="panel-head">
+      <h1 id="login-h">Sign in</h1>
+      <span class="panel-meta">Store Operations</span>
+    </div>
+    {% if err %}
+    <div class="msg err" role="alert">{{ err }}</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('login') }}" class="login-form">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label>
+        Username
+        <input type="text" name="username" value="{{ username }}" autocomplete="username" required autofocus>
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
