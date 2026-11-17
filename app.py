@@ -16,7 +16,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyzer import analysis, charts_svg, db, viewmodel
 from analyzer.parsers import ParseError, parse_pdf
-from analyzer.pdf_report import build_pdf
+from analyzer.pdf_report import build_pdf, build_top30_pdf
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('ANALYZER_SECRET') or os.urandom(24)
@@ -198,6 +198,18 @@ def _analyze_or_redirect(con, start, end, cat):
         return None
 
 
+def _top_per_cat(items, limit=30):
+    counts = {}
+    out = []
+    for idx, r in enumerate(items):
+        g = r['group']
+        c = counts.get(g, 0)
+        if c < limit:
+            counts[g] = c + 1
+            out.append({'row': r, 'top': idx < limit, 'rank': idx + 1, 'grank': c + 1})
+    return out
+
+
 @app.route('/report')
 def report():
     con, start, end, cat = _params()
@@ -206,18 +218,24 @@ def report():
         return redirect(url_for('home'))
     rows = A['rows']
     sold = [r for r in rows if r['sold'] > 0]
+    top_bm = sorted([r for r in rows if r['bm'] > 0], key=lambda r: (-r['bmcost'], -r['bm']))
+    top_units = sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name']))
+    top_sales = sorted(sold, key=lambda r: (-r['amt'], r['name']))
     S = {
-        'top_bm': sorted([r for r in rows if r['bm'] > 0], key=lambda r: (-r['bmcost'], -r['bm'])),
+        'top_bm': top_bm,
+        'top_bm_cat': _top_per_cat(top_bm, 30),
         'low_bm': sorted([r for r in rows if r['bm'] == 1], key=lambda r: -r['bmcost']),
-        'top_units': sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name'])),
-        'top_sales': sorted(sold, key=lambda r: (-r['amt'], r['name'])),
+        'top_units': top_units,
+        'top_units_cat': _top_per_cat(top_units, 30),
+        'top_sales': top_sales,
+        'top_sales_cat': _top_per_cat(top_sales, 30),
         'full': sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name'])),
     }
     order_total = sum(r['order'] for r in rows)
     head_title, head_sub = viewmodel.headline(A)
-    maxes = {'bm': max([r['bmcost'] for r in S['top_bm'][:15]] or [1]),
-             'units': max([r['sold'] for r in S['top_units'][:25]] or [1]),
-             'sales': max([r['amt'] for r in S['top_sales'][:15]] or [1]),
+    maxes = {'bm': max([r['bmcost'] for r in S['top_bm'][:30]] or [1]),
+             'units': max([r['sold'] for r in S['top_units'][:30]] or [1]),
+             'sales': max([r['amt'] for r in S['top_sales'][:30]] or [1]),
              'catsales': max([A['tot'][g]['sales'] for g in A['groups']] or [1])}
     return render_template('report.html', A=A, S=S, cov=db.coverage(con), maxes=maxes, head_title=head_title, head_sub=head_sub,
                            kpis=viewmodel.kpis(A, order_total), brief=viewmodel.order_brief(rows), cat_orders=viewmodel.category_orders(A),
@@ -237,6 +255,17 @@ def report_pdf():
     suffix = '' if A['sel'] is None else '_' + ''.join(c if c.isalnum() else '-' for c in '+'.join(A['scope_list']))[:50]
     return send_file(io.BytesIO(build_pdf(A)), mimetype='application/pdf', as_attachment=True,
                      download_name=f"BM_Sales_Analysis_{start}_to_{end}{suffix}.pdf")
+
+
+@app.route('/report-top30.pdf')
+def report_top30_pdf():
+    con, start, end, cat = _params()
+    A = _analyze_or_redirect(con, start, end, cat)
+    if A is None:
+        return redirect(url_for('home'))
+    suffix = '' if A['sel'] is None else '_' + ''.join(c if c.isalnum() else '-' for c in '+'.join(A['scope_list']))[:50]
+    return send_file(io.BytesIO(build_top30_pdf(A)), mimetype='application/pdf', as_attachment=True,
+                     download_name=f"BM_Sales_Top30_By_Category_{start}_to_{end}{suffix}.pdf")
 
 
 @app.route('/report.csv')

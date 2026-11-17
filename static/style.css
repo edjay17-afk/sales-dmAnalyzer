@@ -1133,3 +1133,80 @@ p.empty { margin: 0; padding: 56px 12px; text-align: center; color: var(--ink-2)
   padding: 12px 16px;
   font-size: 15px;
 }
+
+/* ---------- mobile & tablet layout ---------- */
+.tblwrap, .nav, .strip { -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 720px) {
+  html { scroll-padding-top: 108px; }
+  .topbar-inner {
+    padding: 8px 14px;
+    gap: 8px 12px;
+    min-height: 0;
+  }
+  .topbar-actions {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .user-badge { display: none; }
+  .nav {
+    order: 3;
+    flex: 1 1 100%;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 6px;
+    margin-top: 2px;
+    gap: 4px;
+  }
+  .nav a { padding: 6px 9px; font-size: 13px; }
+  .main { padding: 16px 14px 48px; }
+  .login-wrap { margin: 12px auto; }
+  .login-info h2 { font-size: 21px; }
+  .login-panel h1 { font-size: 22px; }
+}
+
+@media (max-width: 640px) {
+  h1 { font-size: 22px; }
+  .section { margin-top: 34px; padding-top: 18px; }
+  .section > h2 { font-size: 18px; }
+
+  /* Report filterbar: 2-column date grid + full-width category picker & button */
+  .report-head { gap: 12px; margin-bottom: 14px; }
+  .filterbar {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .filterbar input[type=date] { width: 100%; min-width: 0; }
+  .filterbar .catpick,
+  .filterbar button[type="submit"] { grid-column: 1 / -1; }
+  details.catbox { min-width: 0; width: 100%; }
+  .catpanel { left: 0; right: 0; width: 100%; }
+
+  /* KPI strip */
+  .fig { padding: 11px 12px; }
+  .fig .v { font-size: 20px; }
+
+  /* Home / upload workspace */
+  .panel { padding: 16px; }
+  .drop { min-height: 170px; padding: 28px 16px; }
+  .picked { flex-wrap: wrap; }
+  .picked .btn { width: 100%; }
+  .facts .f b { font-size: 22px; }
+  .openbar form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .openbar input[type=date] { width: 100%; min-width: 0; }
+  .openbar button[type="submit"] { grid-column: 1 / -1; width: 100%; }
+
+  /* Search & filter toolbars */
+  .tools input[type=search],
+  .tools select { width: 100%; flex: 1 1 100%; }
+  .chips { width: 100%; }
+  .csv-link { margin-left: 0; }
+
+  /* Dense mobile tables */
+  table.tbl { font-size: 12.5px; }
+  .tbl th, .tbl td { padding: 6px 8px; }
+  .overlay .box { margin: 0 16px; padding: 22px 24px; min-width: 0; width: min(320px, 100%); }
+}

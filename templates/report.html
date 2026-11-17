@@ -12,7 +12,8 @@
 {% endblock %}
 
 {% block header_actions %}
-<a class="btn sm" href="{{ url_for('report_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Download PDF</a>
+<a class="btn sm" id="dl-pdf" href="{{ url_for('report_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Download PDF</a>
+<a class="btn quiet sm" id="dl-top30-pdf" href="{{ url_for('report_top30_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Top 30 PDF</a>
 <a class="btn quiet sm" href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}">Export CSV</a>
 <a class="btn quiet sm" href="{{ url_for('home') }}">Upload PDFs</a>
 {% endblock %}
@@ -148,13 +149,13 @@
 
 <section class="section" id="topbm" aria-labelledby="h-topbm">
   <h2 id="h-topbm">Top bad merchandise</h2>
-  <p class="lead">The 15 products that cost the most when written off, by cost at purchase price. {{ S.top_bm|length }} products had BM in this period.</p>
+  <p class="lead">Top 30 overall and top 30 per category (use the category filter to view any category's top 30). {{ S.top_bm|length }} products had BM in this period.</p>
   {% if S.top_bm %}
   <div class="tools section-tools" data-filter-for="tbl-topbm">
     <input type="search" placeholder="Search top BM…" aria-label="Search top bad merchandise">
     {% if A.groups|length > 1 %}
     <select aria-label="Filter top BM by category">
-      <option value="">All categories</option>
+      <option value="">All categories (top 30 overall)</option>
       {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
     </select>
     {% endif %}
@@ -164,8 +165,8 @@
   <div class="tblwrap"><table class="tbl" id="tbl-topbm">
     <thead><tr><th>Product</th><th>Category</th><th></th><th class="r">BM cost</th><th class="r">BM units</th><th class="r">Units sold</th><th class="r">BM / sold</th><th class="r">Baseline BM / sold</th></tr></thead>
     <tbody>
-    {% for r in S.top_bm[:15] %}
-    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter"><i style="width: {{ (100 * r.bmcost / maxes.bm)|round(0) }}%"></i></div></td>
+    {% for it in S.top_bm_cat %}{% set r = it.row %}
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}" data-top="{{ '1' if it.top else '0' }}" {% if not it.top %}hidden{% endif %}><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter"><i style="width: {{ (100 * r.bmcost / maxes.bm)|round(0) }}%"></i></div></td>
       <td class="r">{{ r.bmcost|php }}</td><td class="r">{{ r.bm|n }}</td><td class="r">{{ r.sold|n }}</td>
       <td class="r rate {{ 'hi' if r.sold and r.bm >= r.sold }}">{% if r.sold %}{{ r.bm|pct(r.sold) }}{% else %}no sales{% endif %}</td>
       <td class="r dim">{% if r.inbase %}{{ r.base_bm|n }} / {{ r.base_sold|n }}{% else %}-{% endif %}</td></tr>
@@ -201,33 +202,33 @@
 
 <section class="section" id="selling" aria-labelledby="h-selling">
   <h2 id="h-selling">Top selling</h2>
-  <p class="lead">Best sellers ranked by unit volume and by sales value.</p>
+  <p class="lead">Best sellers ranked by unit volume and by sales value (top 30 overall, or top 30 per category when filtered).</p>
   <div class="tools section-tools" data-filter-for="tbl-sell-units,tbl-sell-sales">
     <input type="search" placeholder="Search top selling…" aria-label="Search top selling products">
     {% if A.groups|length > 1 %}
     <select aria-label="Filter top selling by category">
-      <option value="">All categories</option>
+      <option value="">All categories (top 30 overall)</option>
       {% for g in A.groups %}<option value="{{ g|lower }}">{{ g }}</option>{% endfor %}
     </select>
     {% endif %}
     <span class="match-cnt"></span>
   </div>
-  <h3 class="sub-h" style="margin-top:4px">By units sold, top 25</h3>
+  <h3 class="sub-h" style="margin-top:4px">By units sold, top 30</h3>
   <div class="tblwrap"><table class="tbl" id="tbl-sell-units">
     <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">Sold</th><th class="r">OR sales</th><th class="r">Days sold</th><th class="r">Per day</th><th class="r">Baseline / day</th><th class="r">BM</th></tr></thead>
     <tbody>
-    {% for r in S.top_units[:25] %}
-    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.sold / maxes.units)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+    {% for it in S.top_units_cat %}{% set r = it.row %}
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}" data-top="{{ '1' if it.top else '0' }}" data-rank="{{ it.rank }}" data-grank="{{ it.grank }}" {% if not it.top %}hidden{% endif %}><td class="dim r rk">{{ it.rank }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.sold / maxes.units)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
       <td class="r"><b>{{ r.sold|n }}</b></td><td class="r">{{ r.amt|php(0) }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.per_day|n(1) }}</td>
       <td class="r dim">{% if r.inbase and r.base_day is not none %}{{ r.base_day|n(1) }}{% else %}new{% endif %}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
     {% endfor %}
     </tbody></table></div>
-  <h3 class="sub-h">By sales value, top 15</h3>
+  <h3 class="sub-h">By sales value, top 30</h3>
   <div class="tblwrap"><table class="tbl" id="tbl-sell-sales">
     <thead><tr><th>#</th><th>Product</th><th>Category</th><th></th><th class="r">OR sales</th><th class="r">Sold</th><th class="r">Days sold</th><th class="r">BM</th></tr></thead>
     <tbody>
-    {% for r in S.top_sales[:15] %}
-    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}"><td class="dim r">{{ loop.index }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.amt / maxes.sales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
+    {% for it in S.top_sales_cat %}{% set r = it.row %}
+    <tr data-n="{{ r.name|lower }}" data-g="{{ r.group|lower }}" data-top="{{ '1' if it.top else '0' }}" data-rank="{{ it.rank }}" data-grank="{{ it.grank }}" {% if not it.top %}hidden{% endif %}><td class="dim r rk">{{ it.rank }}</td><td class="name">{{ r.name }}</td><td>{{ catlabel(r.group) }}</td><td class="meterc"><div class="meter g-{{ r.group|gcls }}"><i style="width: {{ (100 * r.amt / maxes.sales)|round(0) }}%; background: var(--c, var(--other))"></i></div></td>
       <td class="r"><b>{{ r.amt|php(0) }}</b></td><td class="r">{{ r.sold|n }}</td><td class="r dim">{{ r.days }}/{{ A.n }}</td><td class="r">{{ r.bm|n if r.bm else '-' }}</td></tr>
     {% endfor %}
     </tbody></table></div>
@@ -356,13 +357,18 @@
       var shown = 0, total = 0;
       tables.forEach(function (tbl) {
         tbl.querySelectorAll('tbody tr[data-n]').forEach(function (tr) {
-          total++;
-          var ok = (!q || tr.dataset.n.indexOf(q) !== -1 || tr.dataset.g.indexOf(q) !== -1) && (!g || tr.dataset.g === g);
+          var hasTop = tr.dataset.top !== undefined;
+          var ok = active
+            ? (!q || tr.dataset.n.indexOf(q) !== -1 || tr.dataset.g.indexOf(q) !== -1) && (!g || tr.dataset.g === g)
+            : (!hasTop || tr.dataset.top === '1');
           tr.hidden = !ok;
+          var rk = tr.querySelector('.rk');
+          if (rk && tr.dataset.rank) rk.textContent = (g && !q) ? tr.dataset.grank : tr.dataset.rank;
           if (ok) shown++;
+          if (!hasTop || active) total++;
         });
       });
-      if (cnt) cnt.textContent = active ? (shown + ' of ' + total + ' shown') : '';
+      if (cnt) cnt.textContent = active ? (shown + (tables.length === 1 ? ' shown' : ' rows shown')) : '';
     }
     if (inp) inp.addEventListener('input', filterSection);
     if (sel) sel.addEventListener('change', filterSection);
@@ -431,6 +437,42 @@
   if (pf) pf.addEventListener('submit', function () {
     window.showBusy('Updating report', 'Recalculating sales, BM, and order guide…');
   });
+  function wirePdfDownload(id, title, sub, fallbackName) {
+    var link = document.getElementById(id);
+    if (!link || !window.fetch) return;
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      var url = link.href;
+      window.showBusy(title, sub);
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (res) {
+          if (!res.ok) throw new Error('PDF error');
+          var cd = res.headers.get('Content-Disposition') || '';
+          var m = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+          var fname = m ? m[1].replace(/['"]/g, '') : fallbackName;
+          return res.blob().then(function (blob) { return { blob: blob, fname: fname }; });
+        })
+        .then(function (item) {
+          var a = document.createElement('a');
+          var obj = URL.createObjectURL(item.blob);
+          a.href = obj;
+          a.download = item.fname;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(obj); }, 1000);
+        })
+        .catch(function () {
+          window.location.href = url;
+        })
+        .finally(function () {
+          var el = document.getElementById('busy');
+          if (el) el.classList.remove('show');
+        });
+    });
+  }
+  wirePdfDownload('dl-pdf', 'Building PDF report', 'Generating charts and tables…', 'BM_Sales_Analysis.pdf');
+  wirePdfDownload('dl-top30-pdf', 'Building Top 30 PDF', 'Generating top 30 per category…', 'BM_Sales_Top30_By_Category.pdf');
 })();
 </script>
 {% endblock %}
