@@ -39,8 +39,8 @@
   --btn-ink: #ffffff;
   --focus: #1d4ed8;
 
-  --ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  --ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
   color-scheme: light;
 }
 
@@ -122,11 +122,12 @@ a { color: inherit; }
 
 /* ---------- page container ---------- */
 .main {
-  padding: 24px clamp(16px, 3vw, 32px) 64px;
+  padding: 24px 0 64px;
 }
 .page {
   max-width: 1360px;
   margin: 0 auto;
+  padding: 0 clamp(16px, 3vw, 32px);
 }
 .page-head {
   margin-bottom: 20px;
@@ -1160,7 +1161,8 @@ p.empty { margin: 0; padding: 56px 12px; text-align: center; color: var(--ink-2)
     gap: 4px;
   }
   .nav a { padding: 6px 9px; font-size: 13px; }
-  .main { padding: 16px 14px 48px; }
+  .main { padding: 16px 0 48px; }
+  .page { padding: 0 14px; }
   .login-wrap { margin: 12px auto; }
   .login-info h2 { font-size: 21px; }
   .login-panel h1 { font-size: 22px; }
