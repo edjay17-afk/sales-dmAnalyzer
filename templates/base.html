@@ -72,6 +72,10 @@ window.addEventListener('pageshow', function () {
   var el = document.getElementById('busy');
   if (el) el.classList.remove('show');
 });
+var lo = document.querySelector('.logout-form');
+if (lo) lo.addEventListener('submit', function () {
+  window.showBusy('Signing out', 'Ending your session…');
+});
 </script>
 {% block scripts %}{% endblock %}
 </body>
