@@ -16,7 +16,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyzer import analysis, charts_svg, db, viewmodel
 from analyzer.parsers import ParseError, parse_pdf
-from analyzer.pdf_report import build_pdf, build_top30_pdf
+from analyzer.pdf_report import build_pdf, build_top30_pdf, build_fastmoving_pdf, build_category_pdf, build_products_pdf, build_zip, for_group
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('ANALYZER_SECRET') or os.urandom(24)
@@ -257,15 +257,39 @@ def report_pdf():
                      download_name=f"BM_Sales_Analysis_{start}_to_{end}{suffix}.pdf")
 
 
-@app.route('/report-top30.pdf')
-def report_top30_pdf():
+def _per_category_download(builder, stem, combined=None):
+    """One PDF for a single category, or a ZIP (bulk download) with one PDF per category when several are selected.
+    With ?combined=1 the selected categories come as a single PDF instead (built by `combined`, else `builder`)."""
     con, start, end, cat = _params()
     A = _analyze_or_redirect(con, start, end, cat)
     if A is None:
         return redirect(url_for('home'))
     suffix = '' if A['sel'] is None else '_' + ''.join(c if c.isalnum() else '-' for c in '+'.join(A['scope_list']))[:50]
-    return send_file(io.BytesIO(build_top30_pdf(A)), mimetype='application/pdf', as_attachment=True,
-                     download_name=f"BM_Sales_Top30_By_Category_{start}_to_{end}{suffix}.pdf")
+    if request.args.get('combined') and len(A['groups']) > 1:
+        return send_file(io.BytesIO((combined or builder)(A)), mimetype='application/pdf', as_attachment=True,
+                         download_name=f"BM_Sales_{stem}_{start}_to_{end}{suffix}.pdf")
+    if len(A['groups']) == 1:
+        g = A['groups'][0]
+        name = ''.join(c if c.isalnum() else '-' for c in g).strip('-')
+        return send_file(io.BytesIO(builder(for_group(A, g))), mimetype='application/pdf', as_attachment=True,
+                         download_name=f"{name}_{stem}_{start}_to_{end}.pdf")
+    return send_file(io.BytesIO(build_zip(A, builder, stem)), mimetype='application/zip', as_attachment=True,
+                     download_name=f"BM_Sales_{stem}_By_Category_{start}_to_{end}{suffix}.zip")
+
+
+@app.route('/report-top30.pdf')
+def report_top30_pdf():
+    return _per_category_download(build_top30_pdf, 'Top30')
+
+
+@app.route('/report-fastmoving.pdf')
+def report_fastmoving_pdf():
+    return _per_category_download(build_fastmoving_pdf, 'Fast_Moving')
+
+
+@app.route('/report-products')
+def report_products_pdf():
+    return _per_category_download(lambda B: build_category_pdf(B, B['groups'][0]), 'All_Products', build_products_pdf)
 
 
 @app.route('/report.csv')

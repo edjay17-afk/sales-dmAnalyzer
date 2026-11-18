@@ -6,7 +6,7 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import (BaseDocTemplate, Frame, Image, KeepTogether, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle)
+from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Frame, Image, KeepTogether, PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle)
 
 from . import viewmodel
 from .analysis import _pct
@@ -56,6 +56,11 @@ def catcell(g):
 
 def act(a):
     return Paragraph(col(a, ACT_COL[a]), sCell)
+
+
+def numw(count):
+    """Width of a '#' column wide enough for numbers up to `count` without wrapping (cell padding included)."""
+    return max(18.0, 10 + 4.3 * len(str(count)))
 
 
 def tbl(data, widths, aligns, total_row=False, tight=False):
@@ -258,7 +263,8 @@ def build_pdf(A):
         for i, r in enumerate(full, 1):
             d.append([str(i), r['name'], catcell(r['group']), f"{r['sold']:,.0f}", f"{r['amt']:,.0f}", f"{r['days']}/{n}", f"{r['per_day']:.1f}",
                       f"{r['base_day']:.1f}" if r['inbase'] and r['base_day'] is not None else 'new', f"{r['bm']:.0f}" if r['bm'] else '-', f"{r['bmcost']:,.2f}" if r['bm'] else '-', act(r['action']), f"{r['order']}"])
-        story.append(tbl(d, [18, 128, 62, 28, 42, 26, 28, 34, 26, 44, 44, 43], ['L', 'L', 'L'] + ['R'] * 7 + ['L', 'R'], tight=True))
+        nw = numw(len(full))
+        story.append(tbl(d, [nw, 146 - nw, 62, 28, 42, 26, 28, 34, 26, 44, 44, 43], ['L', 'L', 'L'] + ['R'] * 7 + ['L', 'R'], tight=True))
     else:
         story.append(Spacer(1, 8))
         story.append(Paragraph(
@@ -340,6 +346,194 @@ def build_top30_pdf(A):
             story.append(tbl(d, [18, 286, 80, 50, 45, 44], ['L', 'L', 'R', 'R', 'R', 'R'], tight=True))
         else:
             story.append(Paragraph('No sales recorded in this category.', sSm))
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40, title=title)
+    doc.addPageTemplates([PageTemplate(id='p', frames=[Frame(36, 40, A4[0] - 72, A4[1] - 76, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)], onPage=footer)])
+    doc.build(story)
+    return buf.getvalue()
+
+
+FAST_SHARE = 0.80   # a category's fast movers include the products that together make up this share of its units
+FAST_MIN = 5        # ...and every category lists at least this many selling products (or all, if it has fewer)
+
+
+def fast_movers(g_rows, n):
+    """Fast-moving products of one category, best first, as (row, cumulative share of category units) pairs.
+
+    A product is fast moving when it is in the top group that makes up FAST_SHARE of the category's units
+    (volume), or it sold on at least half of the days (consistency). Every category lists at least FAST_MIN
+    products so no category with sales comes out empty, and nothing is capped.
+    """
+    sold = sorted([r for r in g_rows if r['sold'] > 0], key=lambda r: (-r['sold'], -r['amt'], r['name']))
+    total = sum(r['sold'] for r in sold)
+    min_days = max(1, -(-n // 2))
+    out, cum = [], 0.0
+    for i, r in enumerate(sold):
+        before = cum
+        cum += r['sold']
+        if i < FAST_MIN or before < FAST_SHARE * total or r['days'] >= min_days:
+            out.append((r, 100.0 * cum / total))
+    return out, len(sold)
+
+
+def build_fastmoving_pdf(A):
+    """Returns PDF bytes listing the fast-moving products for each category in A['groups'] (see fast_movers)."""
+    rows, tot, n, groups = A['rows'], A['tot'], A['n'], A['groups']
+    title = f"Fast Moving by Category - {A['label']}"
+    min_days = max(1, -(-n // 2))
+    story = []
+
+    def footer(c, doc):
+        c.saveState(); c.setFont('Helvetica', 6.8); c.setFillColor(GRAY)
+        c.drawString(36, 22, f"{title} - {A['scope_label']}")
+        c.drawRightString(A4[0] - 36, 22, f'Page {doc.page}')
+        c.restoreState()
+
+    story += [
+        Paragraph(escape(title), sTitle),
+        Paragraph(
+            f"{len(groups)} categor{'ies' if len(groups) != 1 else 'y'} | Fast moving = in the top products making up {FAST_SHARE:.0%} of the category's units, "
+            f"or sold on at least {min_days} of {n} day{'s' if n != 1 else ''} | Every category lists at least {FAST_MIN} products | Ranked by units sold", sSub),
+        Spacer(1, 8),
+    ]
+
+    for gi, g in enumerate(groups):
+        if gi > 0:
+            story.append(PageBreak())
+        t = tot[g]
+        c_hex = COLORS.get(g)
+        story.append(Paragraph(col(g, c_hex) if c_hex else escape(g), sH))
+
+        fast, n_sold = fast_movers([r for r in rows if r['group'] == g], n)
+        if not fast:
+            story.append(Paragraph(f"No units sold in this category for the period ({t['skus']:,.0f} products on file).", sSm))
+            continue
+        fast_units = sum(r['sold'] for r, _ in fast)
+        story.append(Paragraph(
+            f"<b>{len(fast):,}</b> of {n_sold:,} selling products are fast moving | together {fast_units:,.0f} of {t['units']:,.0f} category units "
+            f"(<b>{pct1(_pct(fast_units, t['units']))}</b>) | category OR sales {php(t['sales'], 0)}", sB))
+
+        d = [['#', 'Product', 'Sold', 'Per day', 'Days sold', '% of cat.', 'Cum. %', 'OR sales', 'Base / day', 'Trend', 'BM']]
+        for i, (r, cum) in enumerate(fast, 1):
+            if r['inbase'] and r['base_day']:
+                tr = _pct(r['per_day'] - r['base_day'], r['base_day'])
+                trend = Paragraph(col(f"{tr:+.0f}%", '#2f9e44' if tr >= 10 else '#c92a2a' if tr <= -10 else '#4b5563'), sCellR)
+                base_txt = f"{r['base_day']:.1f}"
+            else:
+                trend, base_txt = 'new', 'new'
+            d.append([str(i), r['name'], f"{r['sold']:,.0f}", f"{r['per_day']:.1f}", f"{r['days']}/{n}",
+                      pct1(_pct(r['sold'], t['units'])), f"{cum:.0f}%", php(r['amt'], 0), base_txt, trend, f"{r['bm']:.0f}" if r['bm'] else '-'])
+        nw = numw(len(fast))
+        story.append(tbl(d, [nw, 164 - nw, 34, 34, 40, 40, 36, 56, 42, 34, 27], ['L', 'L'] + ['R'] * 9, tight=True))
+        story.append(Paragraph("Cum. % = running share of the category's units. Trend = units per day vs. the baseline (green = up 10%+, red = down 10%+). Count stock on hand before ordering.", sSm))
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40, title=title)
+    doc.addPageTemplates([PageTemplate(id='p', frames=[Frame(36, 40, A4[0] - 72, A4[1] - 76, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)], onPage=footer)])
+    doc.build(story)
+    return buf.getvalue()
+
+
+def build_category_pdf(A, g):
+    """Returns PDF bytes listing EVERY product of the single category `g` (no top-N cut), ranked by units sold."""
+    n, t = A['n'], A['tot'][g]
+    title = f"{g} - All Products - {A['label']}"
+    g_rows = sorted([r for r in A['rows'] if r['group'] == g], key=lambda r: (-r['sold'], -r['amt'], -r['bm'], r['name']))
+    c_hex = COLORS.get(g)
+
+    def footer(c, doc):
+        c.saveState(); c.setFont('Helvetica', 6.8); c.setFillColor(GRAY)
+        c.drawString(36, 22, title)
+        c.drawRightString(A4[0] - 36, 22, f'Page {doc.page}')
+        c.restoreState()
+
+    story = [
+        Paragraph(col(g, c_hex) if c_hex else escape(g), sTitle),
+        Paragraph(f"All products | {escape(A['label'])} | Ranked by units sold | 'Order 7d' = suggested units for the next 7 days (estimate)", sSub),
+        Spacer(1, 6),
+        Paragraph(
+            f"<b>{len(g_rows):,}</b> products | OR sales <b>{php(t['sales'], 0)}</b> ({t['units']:,.0f} units) | "
+            f"BM <b>{t['bmu']:,.0f}</b> units ({php(t['bmc'])} cost, {pct1(_pct(t['bmr'], t['sales']))} of sales)", sB),
+        Spacer(1, 4),
+    ]
+    nw = numw(len(g_rows))
+    d = [['#', 'Item code', 'Product', 'Sold', 'OR sales', 'Days', 'Per day', 'Base / day', 'BM', 'BM cost', 'Action', 'Order 7d']]
+    for i, r in enumerate(g_rows, 1):
+        d.append([str(i), str(r['code']), r['name'], f"{r['sold']:,.0f}", f"{r['amt']:,.0f}", f"{r['days']}/{n}", f"{r['per_day']:.1f}",
+                  f"{r['base_day']:.1f}" if r['inbase'] and r['base_day'] is not None else 'new',
+                  f"{r['bm']:.0f}" if r['bm'] else '-', f"{r['bmcost']:,.2f}" if r['bm'] else '-', act(r['action']), f"{r['order']}"])
+    if len(d) == 1:
+        d.append(['', '', 'No products in this category for the period'] + [''] * 9)
+    story.append(tbl(d, [nw, 50, 144 - nw, 32, 46, 28, 30, 34, 22, 44, 48, 45], ['L', 'L', 'L'] + ['R'] * 7 + ['L', 'R'], tight=True))
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40, title=title)
+    doc.addPageTemplates([PageTemplate(id='p', frames=[Frame(36, 40, A4[0] - 72, A4[1] - 76, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)], onPage=footer)])
+    doc.build(story)
+    return buf.getvalue()
+
+
+def _safe(name):
+    return ''.join(c if c.isalnum() else '-' for c in name).strip('-')
+
+
+def for_group(A, g):
+    """A view of the analysis narrowed to the single category `g`, so any whole-report builder yields a one-category PDF."""
+    return dict(A, groups=[g], scope_label=g, scope_list=[g], sel={g})
+
+
+def build_zip(A, builder, stem):
+    """Returns ZIP bytes with one PDF per category in A['groups'], each made by builder(for_group(A, g))."""
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for i, g in enumerate(A['groups'], 1):
+            z.writestr(f"{i:02d}_{_safe(g)}_{stem}_{A['start']}_to_{A['end']}.pdf", builder(for_group(A, g)))
+    return buf.getvalue()
+
+
+def build_products_zip(A):
+    """Returns ZIP bytes with one all-products PDF per category in A['groups']."""
+    return build_zip(A, lambda B: build_category_pdf(B, B['groups'][0]), 'All_Products')
+
+
+def build_products_pdf(A):
+    """Returns ONE PDF listing every product of every category in A['groups'], ranked by units sold, numbered continuously."""
+    rows, tot, n, groups = A['rows'], A['tot'], A['n'], A['groups']
+    title = f"All Products by Category - {A['label']}"
+
+    def footer(c, doc):
+        c.saveState(); c.setFont('Helvetica', 6.8); c.setFillColor(GRAY)
+        c.drawString(36, 22, f"{title} - {A['scope_label']}")
+        c.drawRightString(A4[0] - 36, 22, f'Page {doc.page}')
+        c.restoreState()
+
+    story = [
+        Paragraph(escape(title), sTitle),
+        Paragraph(f"{len(groups)} categor{'ies' if len(groups) != 1 else 'y'} | {len(rows):,} products | Every product in each category, ranked by units sold | "
+                  "'Order 7d' = suggested units for the next 7 days (estimate)", sSub),
+        Spacer(1, 8),
+    ]
+    num, nw = 0, numw(len(rows))
+    for g in groups:
+        g_rows = sorted([r for r in rows if r['group'] == g], key=lambda r: (-r['sold'], -r['amt'], -r['bm'], r['name']))
+        t = tot[g]
+        c_hex = COLORS.get(g)
+        story.append(CondPageBreak(110))
+        story.append(Paragraph(col(g, c_hex) if c_hex else escape(g), sH))
+        story.append(Paragraph(
+            f"<b>{len(g_rows):,}</b> products | OR sales <b>{php(t['sales'], 0)}</b> ({t['units']:,.0f} units) | "
+            f"BM <b>{t['bmu']:,.0f}</b> units ({php(t['bmc'])} cost, {pct1(_pct(t['bmr'], t['sales']))} of sales)", sB))
+        story.append(Spacer(1, 3))
+        d = [['#', 'Item code', 'Product', 'Sold', 'OR sales', 'Days', 'Per day', 'Base / day', 'BM', 'BM cost', 'Action', 'Order 7d']]
+        for r in g_rows:
+            num += 1
+            d.append([str(num), str(r['code']), r['name'], f"{r['sold']:,.0f}", f"{r['amt']:,.0f}", f"{r['days']}/{n}", f"{r['per_day']:.1f}",
+                      f"{r['base_day']:.1f}" if r['inbase'] and r['base_day'] is not None else 'new',
+                      f"{r['bm']:.0f}" if r['bm'] else '-', f"{r['bmcost']:,.2f}" if r['bm'] else '-', act(r['action']), f"{r['order']}"])
+        story.append(tbl(d, [nw, 50, 144 - nw, 32, 46, 28, 30, 34, 22, 44, 48, 45], ['L', 'L', 'L'] + ['R'] * 7 + ['L', 'R'], tight=True))
+        story.append(Spacer(1, 6))
 
     buf = io.BytesIO()
     doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40, title=title)

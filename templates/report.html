@@ -12,9 +12,20 @@
 {% endblock %}
 
 {% block header_actions %}
-<a class="btn sm" id="dl-pdf" href="{{ url_for('report_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Download PDF</a>
-<a class="btn quiet sm" id="dl-top30-pdf" href="{{ url_for('report_top30_pdf', start=A.start, end=A.end, cat=A.scope_list) }}">Top 30 PDF</a>
-<a class="btn quiet sm" href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}">Export CSV</a>
+<details class="dlmenu" id="dlmenu">
+  <summary class="btn sm">Download</summary>
+  <div class="dlpanel">
+    <a id="dl-pdf" href="{{ url_for('report_pdf', start=A.start, end=A.end, cat=A.scope_list) }}"><b>Full report</b><span>PDF, charts and tables</span></a>
+    {% set multi = A.groups|length > 1 %}
+    {% for id, ep, name in (('dl-top30-pdf', 'report_top30_pdf', 'Top 30 by category'), ('dl-fast-pdf', 'report_fastmoving_pdf', 'Fast moving by category'), ('dl-products-pdf', 'report_products_pdf', 'All products by category')) %}
+    <div class="dlrow">
+      <a id="{{ id }}" class="dlmain" href="{{ url_for(ep, start=A.start, end=A.end, cat=A.scope_list) }}"><b>{{ name }}</b><span>{{ 'one PDF per category (ZIP)' if multi else 'PDF' }}</span></a>
+      {% if multi %}<a id="{{ id }}-one" class="dlalt" href="{{ url_for(ep, start=A.start, end=A.end, cat=A.scope_list, combined=1) }}" title="All selected categories in one PDF file">Single PDF</a>{% endif %}
+    </div>
+    {% endfor %}
+    <a href="{{ url_for('report_csv', start=A.start, end=A.end, cat=A.scope_list) }}"><b>All products</b><span>CSV export</span></a>
+  </div>
+</details>
 <a class="btn quiet sm" href="{{ url_for('home') }}">Upload PDFs</a>
 {% endblock %}
 
@@ -43,13 +54,22 @@
           <summary id="catsum">{% if A.sel is none %}All categories{% elif A.scope_list|length <= 2 %}{{ A.scope_list|join(', ') }}{% else %}{{ A.scope_list|length }} categories{% endif %}</summary>
           <div class="catpanel">
             <input type="search" id="catfind" placeholder="Filter categories…" aria-label="Find a category">
-            <div class="catquick"><button type="button" data-q="clear">All categories</button><button type="button" data-q="hmff">Hot Meals + Fresh Food</button><button type="button" data-q="hmffct">Hot Meals + Fresh Food + Crunch Time</button></div>
+            <div class="cattools">
+              <span class="catcount" id="catcount" aria-live="polite"></span>
+              <span class="catacts"><button type="button" data-q="clear">Select all</button><button type="button" data-q="none">Clear</button></span>
+            </div>
+            <div class="catquick">
+              <span class="catlbl">Quick picks</span>
+              <button type="button" data-q="hmff">Hot Meals + Fresh Food</button>
+              <button type="button" data-q="hmffct">Hot Meals + Fresh Food + Crunch Time</button>
+              <button type="button" data-q="others">All except Hot Meals, Fresh Food &amp; Crunch Time</button>
+            </div>
             <div class="catlist" id="catlist">
               {% for g, sales in A.all_groups %}
-              <label><input type="checkbox" name="cat" value="{{ g }}" {{ 'checked' if A.sel is not none and g in A.sel }}><span class="cat g-{{ g|gcls }}" title="{{ sales|php(0) }} sales in this period">{{ g }}</span></label>
+              <label><input type="checkbox" name="cat" value="{{ g }}" {{ 'checked' if A.sel is none or g in A.sel }}><span class="cat g-{{ g|gcls }}" title="{{ sales|php(0) }} sales in this period">{{ g }}</span></label>
               {% endfor %}
             </div>
-            <p class="hint">Leave all unticked to include every category.</p>
+            <p class="hint">Tick the categories to include. Applying with none ticked shows every category.</p>
           </div>
         </details>
       </div>
@@ -414,17 +434,27 @@
   if (ordSort) ordSort.addEventListener('change', function (e) { sortRows(e.target.value); });
   var sa = document.getElementById('showall'); if (sa) sa.addEventListener('click', function () { all = true; apply(); });
   var boxes = document.querySelectorAll('#catlist input[type=checkbox]'), sum = document.getElementById('catsum'), catbox = document.getElementById('catbox');
+  var cnt = document.getElementById('catcount');
   function summary() {
     var on = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).map(function (b) { return b.value; });
-    sum.textContent = !on.length ? 'All categories' : on.length <= 2 ? on.join(', ') : on.length + ' categories';
+    sum.textContent = !on.length ? 'None selected' : on.length === boxes.length ? 'All categories' : on.length <= 2 ? on.join(', ') : on.length + ' categories';
+    if (cnt) cnt.textContent = on.length + ' of ' + boxes.length + ' selected';
   }
   boxes.forEach(function (b) { b.addEventListener('change', summary); });
-  document.querySelector('.catquick').addEventListener('click', function (e) {
-    var q = e.target.dataset.q; if (!q) return;
-    var pick = q === 'hmff' ? ['Hot Meals', 'Fresh Food'] : q === 'hmffct' ? ['Hot Meals', 'Fresh Food', 'Crunch Time'] : [];
-    boxes.forEach(function (b) { b.checked = pick.indexOf(b.value) !== -1; });
+  document.querySelector('.catpanel').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-q]');
+    if (!btn) return;
+    var q = btn.dataset.q, focus = ['Hot Meals', 'Fresh Food', 'Crunch Time'];
+    if (q === 'clear' || q === 'none') {
+      // Select all / Clear act on the categories currently shown, so they work with the search box too
+      boxes.forEach(function (b) { if (!b.closest('label').hidden) b.checked = q === 'clear'; });
+    } else {
+      var pick = q === 'hmff' ? ['Hot Meals', 'Fresh Food'] : q === 'hmffct' ? focus : null;
+      boxes.forEach(function (b) { b.checked = pick ? pick.indexOf(b.value) !== -1 : focus.indexOf(b.value) === -1; });
+    }
     summary();
   });
+  summary();
   document.getElementById('catfind').addEventListener('input', function (e) {
     var t = e.target.value.trim().toLowerCase();
     document.querySelectorAll('#catlist label').forEach(function (l) { l.hidden = t && l.textContent.toLowerCase().indexOf(t) === -1; });
@@ -437,6 +467,11 @@
   if (pf) pf.addEventListener('submit', function () {
     window.showBusy('Updating report', 'Recalculating sales, BM, and order guide…');
   });
+  var dlmenu = document.getElementById('dlmenu');
+  if (dlmenu) {
+    dlmenu.addEventListener('click', function (e) { if (e.target.closest('.dlpanel a')) setTimeout(function () { dlmenu.open = false; }, 0); });
+    document.addEventListener('click', function (e) { if (dlmenu.open && !dlmenu.contains(e.target)) dlmenu.open = false; });
+  }
   function wirePdfDownload(id, title, sub, fallbackName) {
     var link = document.getElementById(id);
     if (!link || !window.fetch) return;
@@ -472,7 +507,12 @@
     });
   }
   wirePdfDownload('dl-pdf', 'Building PDF report', 'Generating charts and tables…', 'BM_Sales_Analysis.pdf');
-  wirePdfDownload('dl-top30-pdf', 'Building Top 30 PDF', 'Generating top 30 per category…', 'BM_Sales_Top30_By_Category.pdf');
+  wirePdfDownload('dl-top30-pdf', 'Building Top 30 PDF', 'One PDF per category…', 'BM_Sales_Top30_By_Category.zip');
+  wirePdfDownload('dl-products-pdf', 'Building category PDFs', 'One PDF per category, every product…', 'BM_Sales_All_Products.zip');
+  wirePdfDownload('dl-top30-pdf-one', 'Building Top 30 PDF', 'All selected categories in one file…', 'BM_Sales_Top30.pdf');
+  wirePdfDownload('dl-fast-pdf-one', 'Building Fast Moving PDF', 'All selected categories in one file…', 'BM_Sales_Fast_Moving.pdf');
+  wirePdfDownload('dl-products-pdf-one', 'Building All Products PDF', 'All selected categories in one file…', 'BM_Sales_All_Products.pdf');
+  wirePdfDownload('dl-fast-pdf', 'Building Fast Moving PDF', 'One PDF per category…', 'BM_Sales_Fast_Moving_By_Category.zip');
 })();
 </script>
 {% endblock %}
