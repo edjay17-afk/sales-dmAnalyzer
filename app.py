@@ -394,35 +394,33 @@ def api_report_rows():
     A = _analyze_or_redirect(con, start, end, cat, store=store)
     if A is None:
         return jsonify({'ok': False, 'error': 'No data'}), 404
+    part = request.args.get('part') or 'all'
     rows = A['rows']
-    sold = [r for r in rows if r['sold'] > 0]
-    top_units = _top_per_cat(sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name'])), 30, include_all=True)
-    top_sales = _top_per_cat(sorted(sold, key=lambda r: (-r['amt'], r['name'])), 30, include_all=True)
-    full_rows = sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name']))
-    mx_u = max([it['row']['sold'] for it in top_units[:30]] or [1])
-    mx_s = max([it['row']['amt'] for it in top_sales[:30]] or [1])
+    out = {'ok': True, 'n': A['n']}
 
-    def _u(it):
-        r = it['row']
-        return {
+    if part in ('all', 'sell'):
+        sold = [r for r in rows if r['sold'] > 0]
+        top_units = _top_per_cat(sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name'])), 30, include_all=True)
+        top_sales = _top_per_cat(sorted(sold, key=lambda r: (-r['amt'], r['name'])), 30, include_all=True)
+        mx_u = max([it['row']['sold'] for it in top_units[:30]] or [1])
+        mx_s = max([it['row']['amt'] for it in top_sales[:30]] or [1])
+        out['sell_units'] = [{
             'rk': it['rank'], 'grk': it['grank'], 'ct': it['cat_top'],
-            'c': r['code'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
-            's': r['sold'], 'a': r['amt'], 'd': r['days'], 'pd': round(r['per_day'], 1),
-            'bd': f"{r['base_day']:.1f}" if (r['inbase'] and r['base_day'] is not None) else 'new',
-            'bm': r['bm'], 'w': min(100, round(100 * r['sold'] / mx_u)),
-        }
-
-    def _s(it):
-        r = it['row']
-        return {
+            'c': it['row']['code'], 'n': it['row']['name'], 'g': it['row']['group'], 'gc': f_gcls(it['row']['group']),
+            's': it['row']['sold'], 'a': it['row']['amt'], 'd': it['row']['days'], 'pd': round(it['row']['per_day'], 1),
+            'bd': f"{it['row']['base_day']:.1f}" if (it['row']['inbase'] and it['row']['base_day'] is not None) else 'new',
+            'bm': it['row']['bm'], 'w': min(100, round(100 * it['row']['sold'] / mx_u)),
+        } for it in top_units[30:]]
+        out['sell_sales'] = [{
             'rk': it['rank'], 'grk': it['grank'], 'ct': it['cat_top'],
-            'c': r['code'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
-            'a': r['amt'], 's': r['sold'], 'd': r['days'], 'bm': r['bm'],
-            'w': min(100, round(100 * r['amt'] / mx_s)),
-        }
+            'c': it['row']['code'], 'n': it['row']['name'], 'g': it['row']['group'], 'gc': f_gcls(it['row']['group']),
+            'a': it['row']['amt'], 's': it['row']['sold'], 'd': it['row']['days'], 'bm': it['row']['bm'],
+            'w': min(100, round(100 * it['row']['amt'] / mx_s)),
+        } for it in top_sales[30:]]
 
-    def _o(r):
-        return {
+    if part in ('all', 'orders'):
+        full_rows = sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name']))
+        out['orders'] = [{
             'c': r['code'], 'bc': r['barcode'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
             'act': r['action'], 's': r['sold'], 'a': r['amt'], 'bm': r['bm'],
             'bw': f"{r['base_wk']:.1f}" if r['inbase'] else 'new',
@@ -430,14 +428,9 @@ def api_report_rows():
             'so': r['stockout_risk'], 'tz': r['trailing_zero'],
             'gm': round(100 * r['margin_pct']) if r['margin_pct'] is not None else None,
             'uc': r['unit_cost'], 'ur': r['unit_retail'],
-        }
+        } for r in full_rows[100:]]
 
-    return jsonify({
-        'ok': True, 'n': A['n'],
-        'sell_units': [_u(it) for it in top_units[30:]],
-        'sell_sales': [_s(it) for it in top_sales[30:]],
-        'orders': [_o(r) for r in full_rows[100:]],
-    })
+    return jsonify(out)
 
 
 @app.route('/report.pdf')

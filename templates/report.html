@@ -425,7 +425,7 @@
     });
   }
 
-  var rowsHydrated = false, rowsLoading = null;
+  var hydrated = { sell: false, orders: false }, loading = { sell: null, orders: null };
   var rowsApiUrl = {{ url_for('api_report_rows', start=A.start, end=A.end, cat=A.scope_list, store=store)|tojson }};
   var prodBaseUrl = {{ url_for('product_page', code='__CODE__', end=A.end, store=store)|tojson }};
   function escHtml(s) {
@@ -439,62 +439,77 @@
   function catLabelHtml(g, gc) {
     return '<span class="cat g-' + escHtml(gc) + '">' + escHtml(g) + '</span>';
   }
-  function hydrateTables(data) {
-    var suBody = document.querySelector('#tbl-sell-units tbody');
-    if (suBody && data.sell_units && data.sell_units.length) {
-      var h = [];
-      for (var i = 0; i < data.sell_units.length; i++) {
-        var r = data.sell_units[i];
-        h.push('<tr data-n="' + escHtml(r.n.toLowerCase() + ' ' + r.c.toLowerCase()) + '" data-g="' + escHtml(r.g.toLowerCase()) + '" data-top="0" data-cattop="' + (r.ct ? '1' : '0') + '" data-rank="' + r.rk + '" data-grank="' + r.grk + '" hidden>' +
-          '<td class="dim r rk">' + r.rk + '</td><td class="name">' + prodLinkHtml(r.c, r.n) + '</td><td>' + catLabelHtml(r.g, r.gc) + '</td>' +
-          '<td class="meterc"><div class="meter g-' + escHtml(r.gc) + '"><i style="width:' + r.w + '%; background:var(--c, var(--other))"></i></div></td>' +
-          '<td class="r"><b>' + fmtInt(r.s) + '</b></td><td class="r">' + fmtPhp0(r.a) + '</td><td class="r dim">' + r.d + '/' + data.n + '</td><td class="r">' + r.pd.toFixed(1) + '</td>' +
-          '<td class="r dim">' + escHtml(r.bd) + '</td><td class="r">' + (r.bm ? fmtInt(r.bm) : '-') + '</td></tr>');
+  function hydratePart(part, data) {
+    if (part === 'sell') {
+      var suBody = document.querySelector('#tbl-sell-units tbody');
+      if (suBody && data.sell_units && data.sell_units.length) {
+        var h = [];
+        for (var i = 0; i < data.sell_units.length; i++) {
+          var r = data.sell_units[i];
+          h.push('<tr data-n="' + escHtml(r.n.toLowerCase() + ' ' + r.c.toLowerCase()) + '" data-g="' + escHtml(r.g.toLowerCase()) + '" data-top="0" data-cattop="' + (r.ct ? '1' : '0') + '" data-rank="' + r.rk + '" data-grank="' + r.grk + '" hidden>' +
+            '<td class="dim r rk">' + r.rk + '</td><td class="name">' + prodLinkHtml(r.c, r.n) + '</td><td>' + catLabelHtml(r.g, r.gc) + '</td>' +
+            '<td class="meterc"><div class="meter g-' + escHtml(r.gc) + '"><i style="width:' + r.w + '%; background:var(--c, var(--other))"></i></div></td>' +
+            '<td class="r"><b>' + fmtInt(r.s) + '</b></td><td class="r">' + fmtPhp0(r.a) + '</td><td class="r dim">' + r.d + '/' + data.n + '</td><td class="r">' + r.pd.toFixed(1) + '</td>' +
+            '<td class="r dim">' + escHtml(r.bd) + '</td><td class="r">' + (r.bm ? fmtInt(r.bm) : '-') + '</td></tr>');
+        }
+        suBody.insertAdjacentHTML('beforeend', h.join(''));
       }
-      suBody.insertAdjacentHTML('beforeend', h.join(''));
-    }
-    var ssBody = document.querySelector('#tbl-sell-sales tbody');
-    if (ssBody && data.sell_sales && data.sell_sales.length) {
-      var h2 = [];
-      for (var j = 0; j < data.sell_sales.length; j++) {
-        var s = data.sell_sales[j];
-        h2.push('<tr data-n="' + escHtml(s.n.toLowerCase() + ' ' + s.c.toLowerCase()) + '" data-g="' + escHtml(s.g.toLowerCase()) + '" data-top="0" data-cattop="' + (s.ct ? '1' : '0') + '" data-rank="' + s.rk + '" data-grank="' + s.grk + '" hidden>' +
-          '<td class="dim r rk">' + s.rk + '</td><td class="name">' + prodLinkHtml(s.c, s.n) + '</td><td>' + catLabelHtml(s.g, s.gc) + '</td>' +
-          '<td class="meterc"><div class="meter g-' + escHtml(s.gc) + '"><i style="width:' + s.w + '%; background:var(--c, var(--other))"></i></div></td>' +
-          '<td class="r"><b>' + fmtPhp0(s.a) + '</b></td><td class="r">' + fmtInt(s.s) + '</td><td class="r dim">' + s.d + '/' + data.n + '</td><td class="r">' + (s.bm ? fmtInt(s.bm) : '-') + '</td></tr>');
+      var ssBody = document.querySelector('#tbl-sell-sales tbody');
+      if (ssBody && data.sell_sales && data.sell_sales.length) {
+        var h2 = [];
+        for (var j = 0; j < data.sell_sales.length; j++) {
+          var s = data.sell_sales[j];
+          h2.push('<tr data-n="' + escHtml(s.n.toLowerCase() + ' ' + s.c.toLowerCase()) + '" data-g="' + escHtml(s.g.toLowerCase()) + '" data-top="0" data-cattop="' + (s.ct ? '1' : '0') + '" data-rank="' + s.rk + '" data-grank="' + s.grk + '" hidden>' +
+            '<td class="dim r rk">' + s.rk + '</td><td class="name">' + prodLinkHtml(s.c, s.n) + '</td><td>' + catLabelHtml(s.g, s.gc) + '</td>' +
+            '<td class="meterc"><div class="meter g-' + escHtml(s.gc) + '"><i style="width:' + s.w + '%; background:var(--c, var(--other))"></i></div></td>' +
+            '<td class="r"><b>' + fmtPhp0(s.a) + '</b></td><td class="r">' + fmtInt(s.s) + '</td><td class="r dim">' + s.d + '/' + data.n + '</td><td class="r">' + (s.bm ? fmtInt(s.bm) : '-') + '</td></tr>');
+        }
+        ssBody.insertAdjacentHTML('beforeend', h2.join(''));
       }
-      ssBody.insertAdjacentHTML('beforeend', h2.join(''));
+      hydrated.sell = true;
     }
-    if (tbody && data.orders && data.orders.length) {
-      var h3 = [];
-      for (var k = 0; k < data.orders.length; k++) {
-        var o = data.orders[k];
-        var actTitle = o.act.charAt(0) + o.act.slice(1).toLowerCase();
-        var badges = (o.so ? ' <span class="badge-so" title="Regular baseline seller with ' + o.tz + ' trailing zero-sale days">Stockout?</span>' : '') +
-          (o.gm !== null ? ' <span class="badge-margin">' + o.gm + '% GM</span>' : '');
-        h3.push('<tr data-code="' + escHtml(o.c) + '" data-a="' + escHtml(o.act) + '" data-g="' + escHtml(o.g.toLowerCase()) + '" data-n="' + escHtml((o.n + ' ' + o.g + ' ' + o.c + ' ' + (o.bc || '')).toLowerCase()) + '" data-sold="' + o.s + '" data-amt="' + o.a + '" data-rate="' + o.rt + '" data-order="' + o.net + '" data-raw="' + o.raw + '" data-name="' + escHtml(o.n.toLowerCase()) + '" hidden>' +
-          '<td class="name">' + prodLinkHtml(o.c, o.n) + badges + '</td><td>' + catLabelHtml(o.g, o.gc) + '</td>' +
-          '<td><span class="pill ' + escHtml(o.act) + '">' + escHtml(actTitle) + '</span></td>' +
-          '<td class="r">' + fmtInt(o.s) + '</td><td class="r">' + (o.bm ? fmtInt(o.bm) : '-') + '</td><td class="r dim">' + escHtml(o.bw) + '</td>' +
-          '<td class="r rate ' + (o.rt >= 0.25 ? 'hi' : '') + '">' + Math.round(100 * o.rt) + '%</td><td class="r dim">' + o.raw + '</td>' +
-          '<td class="r"><input type="number" class="inline-num oh-inp" min="0" step="1" placeholder="-" value="' + (o.oh !== null ? o.oh : '') + '" aria-label="On hand for ' + escHtml(o.n) + '"></td>' +
-          '<td class="r"><input type="number" class="inline-num pk-inp" min="1" step="1" value="' + o.pk + '" aria-label="Pack size for ' + escHtml(o.n) + '"></td>' +
-          '<td class="r"><span class="tag sm net-tag">' + o.net + '</span></td></tr>');
+    if (part === 'orders') {
+      if (tbody && data.orders && data.orders.length) {
+        var h3 = [];
+        for (var k = 0; k < data.orders.length; k++) {
+          var o = data.orders[k];
+          var actTitle = o.act.charAt(0) + o.act.slice(1).toLowerCase();
+          var badges = (o.so ? ' <span class="badge-so" title="Regular baseline seller with ' + o.tz + ' trailing zero-sale days">Stockout?</span>' : '') +
+            (o.gm !== null ? ' <span class="badge-margin">' + o.gm + '% GM</span>' : '');
+          h3.push('<tr data-code="' + escHtml(o.c) + '" data-a="' + escHtml(o.act) + '" data-g="' + escHtml(o.g.toLowerCase()) + '" data-n="' + escHtml((o.n + ' ' + o.g + ' ' + o.c + ' ' + (o.bc || '')).toLowerCase()) + '" data-sold="' + o.s + '" data-amt="' + o.a + '" data-rate="' + o.rt + '" data-order="' + o.net + '" data-raw="' + o.raw + '" data-name="' + escHtml(o.n.toLowerCase()) + '" hidden>' +
+            '<td class="name">' + prodLinkHtml(o.c, o.n) + badges + '</td><td>' + catLabelHtml(o.g, o.gc) + '</td>' +
+            '<td><span class="pill ' + escHtml(o.act) + '">' + escHtml(actTitle) + '</span></td>' +
+            '<td class="r">' + fmtInt(o.s) + '</td><td class="r">' + (o.bm ? fmtInt(o.bm) : '-') + '</td><td class="r dim">' + escHtml(o.bw) + '</td>' +
+            '<td class="r rate ' + (o.rt >= 0.25 ? 'hi' : '') + '">' + Math.round(100 * o.rt) + '%</td><td class="r dim">' + o.raw + '</td>' +
+            '<td class="r"><input type="number" class="inline-num oh-inp" min="0" step="1" placeholder="-" value="' + (o.oh !== null ? o.oh : '') + '" aria-label="On hand for ' + escHtml(o.n) + '"></td>' +
+            '<td class="r"><input type="number" class="inline-num pk-inp" min="1" step="1" value="' + o.pk + '" aria-label="Pack size for ' + escHtml(o.n) + '"></td>' +
+            '<td class="r"><span class="tag sm net-tag">' + o.net + '</span></td></tr>');
+        }
+        tbody.insertAdjacentHTML('beforeend', h3.join(''));
+        rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-a]'));
       }
-      tbody.insertAdjacentHTML('beforeend', h3.join(''));
-      rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-a]'));
+      hydrated.orders = true;
     }
-    rowsHydrated = true;
   }
-  function ensureFullRows(cb) {
-    if (rowsHydrated) { cb(); return; }
-    if (!rowsLoading) {
-      rowsLoading = fetch(rowsApiUrl, { credentials: 'same-origin' })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { if (d && d.ok) hydrateTables(d); })
-        .catch(function () { rowsHydrated = true; });
+  function ensurePart(part, cb, onErr) {
+    if (hydrated[part]) { cb(); return; }
+    if (!loading[part]) {
+      var sep = rowsApiUrl.indexOf('?') !== -1 ? '&' : '?';
+      loading[part] = fetch(rowsApiUrl + sep + 'part=' + part, { credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (d) {
+          if (!d || !d.ok) throw new Error('Invalid response');
+          hydratePart(part, d);
+        })
+        .catch(function (err) {
+          loading[part] = null;
+          throw err;
+        });
     }
-    rowsLoading.then(cb);
+    loading[part].then(cb).catch(function () { if (onErr) onErr(); });
   }
 
   // Per-section table search & category filters (Top BM, Low wastage, Top selling)
@@ -508,9 +523,9 @@
     function filterSection() {
       var q = inp ? inp.value.trim().toLowerCase() : '';
       var g = sel ? sel.value : '';
-      if (isLazy && !rowsHydrated && (q || g || tables.some(function (t) { return t.dataset.showAll === '1'; }))) {
+      if (isLazy && !hydrated.sell && (q || g || tables.some(function (t) { return t.dataset.showAll === '1'; }))) {
         if (cnt) cnt.textContent = 'Loading…';
-        ensureFullRows(filterSection);
+        ensurePart('sell', filterSection, function () { if (cnt) cnt.textContent = 'Failed to load — reload page'; });
         return;
       }
       var active = !!(q || g);
@@ -537,19 +552,32 @@
         });
         var btn = document.querySelector('button[data-see-all="' + tbl.id + '"]');
         if (btn) {
-          btn.hidden = !!q || (rowsHydrated && totalInScope <= 30);
-          if (!q) btn.textContent = showAll ? 'Show top 30 only' : ('See all ' + (rowsHydrated ? totalInScope.toLocaleString() : btn.textContent.replace(/[^\d,]/g, '')) + ' products');
+          btn.disabled = false;
+          btn.hidden = !!q || (hydrated.sell && totalInScope <= 30);
+          if (!q) btn.textContent = showAll ? 'Show top 30 only' : ('See all ' + (hydrated.sell ? totalInScope.toLocaleString() : btn.dataset.totalLabel) + ' products');
         }
       });
       if (cnt) cnt.textContent = active ? (shown + (tables.length === 1 ? ' shown' : ' rows shown')) : '';
     }
     tables.forEach(function (tbl) {
       var btn = document.querySelector('button[data-see-all="' + tbl.id + '"]');
-      if (btn) btn.addEventListener('click', function () {
-        tbl.dataset.showAll = tbl.dataset.showAll === '1' ? '0' : '1';
-        if (!rowsHydrated) { btn.textContent = 'Loading…'; ensureFullRows(filterSection); return; }
-        filterSection();
-      });
+      if (btn) {
+        btn.dataset.totalLabel = btn.textContent.replace(/[^\d,]/g, '');
+        btn.addEventListener('click', function () {
+          tbl.dataset.showAll = tbl.dataset.showAll === '1' ? '0' : '1';
+          if (!hydrated.sell) {
+            btn.disabled = true;
+            btn.textContent = 'Loading…';
+            ensurePart('sell', filterSection, function () {
+              tbl.dataset.showAll = '0';
+              btn.disabled = false;
+              btn.textContent = 'See all ' + btn.dataset.totalLabel + ' products (retry)';
+            });
+            return;
+          }
+          filterSection();
+        });
+      }
     });
     if (inp) inp.addEventListener('input', filterSection);
     if (sel) sel.addEventListener('change', filterSection);
@@ -560,11 +588,18 @@
   var tbody = document.querySelector('.ordtbl tbody');
   var rows = Array.prototype.slice.call(document.querySelectorAll('.ordtbl tbody tr[data-a]'));
   var cntEl = document.getElementById('ord-cnt');
+  var sa = document.getElementById('showall');
+  var saOrigText = sa ? sa.textContent : '';
   function apply() {
     var filtering = !!(f || q || cat);
-    if (!rowsHydrated && (filtering || all)) {
+    if (!hydrated.orders && (filtering || all)) {
       if (cntEl) cntEl.textContent = 'Loading…';
-      ensureFullRows(apply);
+      if (sa) { sa.disabled = true; sa.textContent = 'Loading…'; }
+      ensurePart('orders', apply, function () {
+        all = false;
+        if (cntEl) cntEl.textContent = 'Failed to load — reload page';
+        if (sa) { sa.disabled = false; sa.textContent = saOrigText + ' (retry)'; }
+      });
       return;
     }
     var shown = 0, matched = 0;
@@ -576,13 +611,13 @@
       if (ok) shown++;
     });
     document.getElementById('nomatch').hidden = shown > 0;
-    var b = document.getElementById('showall'); if (b) b.hidden = all || filtering;
+    if (sa) { sa.disabled = false; sa.textContent = saOrigText; sa.hidden = all || filtering; }
     if (cntEl) cntEl.textContent = filtering ? (matched + ' of ' + rows.length + ' match') : '';
   }
   function sortRows(by) {
-    if (!rowsHydrated) {
+    if (!hydrated.orders) {
       if (cntEl) cntEl.textContent = 'Loading…';
-      ensureFullRows(function () { sortRows(by); });
+      ensurePart('orders', function () { sortRows(by); }, function () { if (cntEl) cntEl.textContent = 'Failed to load — reload page'; });
       return;
     }
     rows.sort(function (a, b) {
@@ -604,7 +639,7 @@
   if (ordCat) ordCat.addEventListener('change', function (e) { cat = e.target.value; apply(); });
   var ordSort = document.getElementById('ord-sort');
   if (ordSort) ordSort.addEventListener('change', function (e) { sortRows(e.target.value); });
-  var sa = document.getElementById('showall'); if (sa) sa.addEventListener('click', function () { all = true; apply(); });
+  if (sa) sa.addEventListener('click', function () { all = true; apply(); });
 
   // Inline On-Hand & Pack persistence
   var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
