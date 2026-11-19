@@ -27,9 +27,9 @@
           <line x1="12" y1="18" x2="12" y2="12"/>
           <polyline points="9 15 12 12 15 15"/>
         </svg>
-        <strong>Drop PDFs here or click to browse</strong>
-        <span>One OR Sales Monitor report per day; any number of BM slips.</span>
-        <input type="file" name="files" id="files" accept="application/pdf,.pdf" multiple>
+        <strong>Drop PDFs or a ZIP here, or click to browse</strong>
+        <span>One OR Sales Monitor report per day; any number of BM slips, or a .zip batch.</span>
+        <input type="file" name="files" id="files" accept="application/pdf,.pdf,application/zip,.zip" multiple>
       </label>
       <div class="picked">
         <button class="btn" type="submit" id="go" disabled>Analyze PDFs</button>
@@ -121,7 +121,7 @@
 var f = document.getElementById('files'), d = document.getElementById('drop'), go = document.getElementById('go'), cnt = document.getElementById('count');
 function show() {
   var n = f.files.length;
-  cnt.textContent = n ? n + ' PDF' + (n > 1 ? 's' : '') + ' selected' : '';
+  cnt.textContent = n ? n + ' file' + (n > 1 ? 's' : '') + ' selected' : '';
   go.disabled = !n;
 }
 f.addEventListener('change', show);
@@ -129,7 +129,10 @@ f.addEventListener('change', show);
 ['dragleave', 'drop'].forEach(function (e) { d.addEventListener(e, function (ev) { ev.preventDefault(); d.classList.remove('over'); }); });
 d.addEventListener('drop', function (ev) {
   var dt = new DataTransfer();
-  for (var i = 0; i < ev.dataTransfer.files.length; i++) { var x = ev.dataTransfer.files[i]; if (x.name.toLowerCase().endsWith('.pdf')) dt.items.add(x); }
+  for (var i = 0; i < ev.dataTransfer.files.length; i++) {
+    var x = ev.dataTransfer.files[i], ln = x.name.toLowerCase();
+    if (ln.endsWith('.pdf') || ln.endsWith('.zip')) dt.items.add(x);
+  }
   f.files = dt.files; show();
 });
 document.getElementById('upform').addEventListener('submit', function () {

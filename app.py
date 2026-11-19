@@ -13,10 +13,12 @@ import re
 import secrets
 import sys
 import webbrowser
+import zipfile
 from datetime import datetime, timedelta
 from threading import Timer
 
 from flask import Flask, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from analyzer import analysis, charts_svg, db, viewmodel
@@ -56,8 +58,13 @@ def _load_secret():
 
 
 app.secret_key = _load_secret()
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config['MAX_CONTENT_LENGTH'] = 300 * 1024 * 1024
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+if os.environ.get('ANALYZER_SECURE_COOKIES') == '1':
+    app.config['SESSION_COOKIE_SECURE'] = True
 PORT = int(os.environ.get('ANALYZER_PORT', 5412))
 
 
@@ -248,8 +255,31 @@ def upload():
     counts = {'or_new': 0, 'or_replaced': 0, 'bm_new': 0, 'bm_replaced': 0, 'failed': 0}
     for f in files:
         name = os.path.basename(f.filename)
-        if not name.lower().endswith('.pdf'):
-            flash(('err', f'{name}: not a PDF, skipped.')); counts['failed'] += 1
+        low = name.lower()
+        if low.endswith('.zip'):
+            try:
+                with zipfile.ZipFile(io.BytesIO(f.read())) as zf:
+                    members = [m for m in sorted(zf.namelist()) if m.lower().endswith('.pdf') and not m.startswith('__MACOSX/')]
+                    if not members:
+                        flash(('warn', f'{name}: ZIP contained no PDF files.'))
+                    for member in members:
+                        mname = os.path.basename(member)
+                        if not mname:
+                            continue
+                        try:
+                            kind, st, dt, warns = _ingest_pdf(con, io.BytesIO(zf.read(member)), mname, existing_stores)
+                        except ParseError as e:
+                            flash(('err', f'{mname}: {e}.')); counts['failed'] += 1
+                            continue
+                        counts[f'{kind}_{st}'] += 1
+                        (or_dates if kind == 'or' else bm_dates).append(dt)
+                        for w in warns:
+                            flash(('warn', f'{mname}: {w}'))
+            except zipfile.BadZipFile:
+                flash(('err', f'{name}: invalid ZIP archive, skipped.')); counts['failed'] += 1
+            continue
+        if not low.endswith('.pdf'):
+            flash(('err', f'{name}: not a PDF or ZIP, skipped.')); counts['failed'] += 1
             continue
         try:
             kind, st, dt, warns = _ingest_pdf(con, io.BytesIO(f.read()), name, existing_stores)
@@ -294,15 +324,15 @@ def _analyze_or_redirect(con, start, end, cat, store=None):
         return None
 
 
-def _top_per_cat(items, limit=30):
+def _top_per_cat(items, limit=30, include_all=False):
     counts = {}
     out = []
     for idx, r in enumerate(items):
         g = r['group']
-        c = counts.get(g, 0)
-        if c < limit:
-            counts[g] = c + 1
-            out.append({'row': r, 'top': idx < limit, 'rank': idx + 1, 'grank': c + 1})
+        c = counts.get(g, 0) + 1
+        counts[g] = c
+        if include_all or c <= limit:
+            out.append({'row': r, 'top': idx < limit, 'cat_top': c <= limit, 'rank': idx + 1, 'grank': c})
     return out
 
 
@@ -317,15 +347,26 @@ def report():
     top_bm = sorted([r for r in rows if r['bm'] > 0], key=lambda r: (-r['bmcost'], -r['bm']))
     top_units = sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name']))
     top_sales = sorted(sold, key=lambda r: (-r['amt'], r['name']))
+    full_rows = sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name']))
+    action_counts = {a: 0 for a in ('INCREASE', 'HOLD', 'TRIM', 'CUT', 'PAUSE')}
+    for r in rows:
+        if r['action'] in action_counts:
+            action_counts[r['action']] += 1
     S = {
         'top_bm': top_bm,
         'top_bm_cat': _top_per_cat(top_bm, 30),
         'low_bm': sorted([r for r in rows if r['bm'] == 1], key=lambda r: -r['bmcost']),
         'top_units': top_units,
-        'top_units_cat': _top_per_cat(top_units, 30),
+        'top_units_cat': _top_per_cat(top_units[:30], 30),
         'top_sales': top_sales,
-        'top_sales_cat': _top_per_cat(top_sales, 30),
-        'full': sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name'])),
+        'top_sales_cat': _top_per_cat(top_sales[:30], 30),
+        'full': full_rows[:100],
+    }
+    counts = {
+        'top_units': len(top_units),
+        'top_sales': len(top_sales),
+        'full': len(full_rows),
+        'actions': action_counts,
     }
     order_total = sum(r['order'] for r in rows)
     net_order_total = sum(r['net_order'] for r in rows)
@@ -334,7 +375,7 @@ def report():
              'units': max([r['sold'] for r in S['top_units'][:30]] or [1]),
              'sales': max([r['amt'] for r in S['top_sales'][:30]] or [1]),
              'catsales': max([A['tot'][g]['sales'] for g in A['groups']] or [1])}
-    return render_template('report.html', A=A, S=S, cov=db.coverage(con, store=store), maxes=maxes,
+    return render_template('report.html', A=A, S=S, counts=counts, cov=db.coverage(con, store=store), maxes=maxes,
                            stores=db.stores(con), store=store,
                            head_title=head_title, head_sub=head_sub,
                            kpis=viewmodel.kpis(A, order_total, net_order_total),
@@ -345,6 +386,58 @@ def report():
                            bm_svg=charts_svg.daily_svg(A, 'bmc', 'Daily BM cost (PHP)'),
                            wk_units_svg=charts_svg.weekday_svg(A, 'units', 'Average units sold per weekday'),
                            wk_sales_svg=charts_svg.weekday_svg(A, 'sales', 'Average sales per weekday (PHP)'))
+
+
+@app.route('/api/report-rows')
+def api_report_rows():
+    con, start, end, cat, store = _params()
+    A = _analyze_or_redirect(con, start, end, cat, store=store)
+    if A is None:
+        return jsonify({'ok': False, 'error': 'No data'}), 404
+    rows = A['rows']
+    sold = [r for r in rows if r['sold'] > 0]
+    top_units = _top_per_cat(sorted(sold, key=lambda r: (-r['sold'], -r['amt'], r['name'])), 30, include_all=True)
+    top_sales = _top_per_cat(sorted(sold, key=lambda r: (-r['amt'], r['name'])), 30, include_all=True)
+    full_rows = sorted(rows, key=lambda r: (-r['sold'], -r['amt'], r['name']))
+    mx_u = max([it['row']['sold'] for it in top_units[:30]] or [1])
+    mx_s = max([it['row']['amt'] for it in top_sales[:30]] or [1])
+
+    def _u(it):
+        r = it['row']
+        return {
+            'rk': it['rank'], 'grk': it['grank'], 'ct': it['cat_top'],
+            'c': r['code'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
+            's': r['sold'], 'a': r['amt'], 'd': r['days'], 'pd': round(r['per_day'], 1),
+            'bd': f"{r['base_day']:.1f}" if (r['inbase'] and r['base_day'] is not None) else 'new',
+            'bm': r['bm'], 'w': min(100, round(100 * r['sold'] / mx_u)),
+        }
+
+    def _s(it):
+        r = it['row']
+        return {
+            'rk': it['rank'], 'grk': it['grank'], 'ct': it['cat_top'],
+            'c': r['code'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
+            'a': r['amt'], 's': r['sold'], 'd': r['days'], 'bm': r['bm'],
+            'w': min(100, round(100 * r['amt'] / mx_s)),
+        }
+
+    def _o(r):
+        return {
+            'c': r['code'], 'bc': r['barcode'], 'n': r['name'], 'g': r['group'], 'gc': f_gcls(r['group']),
+            'act': r['action'], 's': r['sold'], 'a': r['amt'], 'bm': r['bm'],
+            'bw': f"{r['base_wk']:.1f}" if r['inbase'] else 'new',
+            'rt': r['rate'], 'raw': r['order'], 'oh': r['on_hand'], 'pk': r['pack_size'], 'net': r['net_order'],
+            'so': r['stockout_risk'], 'tz': r['trailing_zero'],
+            'gm': round(100 * r['margin_pct']) if r['margin_pct'] is not None else None,
+            'uc': r['unit_cost'], 'ur': r['unit_retail'],
+        }
+
+    return jsonify({
+        'ok': True, 'n': A['n'],
+        'sell_units': [_u(it) for it in top_units[30:]],
+        'sell_sales': [_s(it) for it in top_sales[30:]],
+        'orders': [_o(r) for r in full_rows[100:]],
+    })
 
 
 @app.route('/report.pdf')

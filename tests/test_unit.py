@@ -163,9 +163,14 @@ class RouteTests(unittest.TestCase):
         r = self.client.post('/login', data={'username': 'tester', 'password': 'secret123', 'csrf_token': csrf}, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
 
-        for path in ('/report', '/trends', '/history', '/settings', '/product/39000001', '/report-par.pdf', '/order-list.csv', '/report.csv'):
+        for path in ('/report', '/api/report-rows', '/trends', '/history', '/settings', '/product/39000001', '/report-par.pdf', '/order-list.csv', '/report.csv'):
             resp = self.client.get(path)
             self.assertEqual(resp.status_code, 200, path)
+
+        rows_json = self.client.get('/api/report-rows').get_json()
+        self.assertTrue(rows_json['ok'])
+        self.assertIn('sell_units', rows_json)
+        self.assertIn('orders', rows_json)
 
         # Inline product meta API updates net_order
         resp = self.client.post(

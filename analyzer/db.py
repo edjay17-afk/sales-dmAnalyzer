@@ -50,8 +50,11 @@ def _migrate(con):
 def connect(path=None):
     path = path or DB_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path, timeout=15.0)
     con.row_factory = sqlite3.Row
+    con.execute('PRAGMA busy_timeout=15000')
+    con.execute('PRAGMA journal_mode=WAL')
+    con.execute('PRAGMA synchronous=NORMAL')
     con.executescript(SCHEMA)
     _migrate(con)
     return con
