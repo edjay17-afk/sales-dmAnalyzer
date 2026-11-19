@@ -91,7 +91,7 @@ def parse_or(pdf):
                         qty = _num(w['text'])
                     elif w['x1'] <= 568:
                         amt = _num(w['text'])
-                cur = {'cat': cat, 'code': ws[0]['text'], 'name': ' '.join(name), 'qty': qty, 'amt': amt}
+                cur = {'cat': cat, 'code': ws[0]['text'], 'barcode': barcode, 'name': ' '.join(name), 'qty': qty, 'amt': amt}
                 out['items'].append(cur)
             elif (cur is not None and ws and cat and 100 < ws[0]['x0'] < 480 and all(w['x1'] < 478 for w in ws)
                   and not re.match(r'(Itemcode|Date|Store|PHILIPPINE|OR SALES|Page)', txt)):

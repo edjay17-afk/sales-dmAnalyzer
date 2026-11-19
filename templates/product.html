@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}{{ D.name }} — BM &amp; Sales Analyzer{% endblock %}
+
+{% block header_actions %}
+<a class="btn quiet sm" href="{{ url_for('report', end=D.end, store=store) }}">Back to report</a>
+{% endblock %}
+
+{% block body %}
+<div class="report-head">
+  <div class="report-title">
+    <div class="eyebrow">
+      <span>Product Drilldown</span>
+      <span class="sep">/</span>
+      <span class="cat g-{{ D.group|gcls }}">{{ D.group }}</span>
+      <span class="sep">/</span>
+      <span class="mono">{{ D.code }}</span>
+      {% if D.barcode %}<span class="sep">/</span><span class="mono">{{ D.barcode }}</span>{% endif %}
+    </div>
+    <h1>{{ D.name }}</h1>
+    <p class="verdict-sub">Last {{ D.days }} calendar days ending {{ D.end|dfmt }} ({{ D.or_days_in_win }} OR days on file).</p>
+  </div>
+
+  <form class="filterbar" method="get">
+    {% if store %}<input type="hidden" name="store" value="{{ store }}">{% endif %}
+    <label>Window
+      <select name="days" onchange="this.form.submit()">
+        {% for w in [30, 60, 90, 120, 180] %}<option value="{{ w }}" {{ 'selected' if D.days == w }}>Last {{ w }} days</option>{% endfor %}
+      </select>
+    </label>
+    <label>End date<input type="date" name="end" value="{{ D.end }}"></label>
+    <button class="btn quiet" type="submit">Update</button>
+  </form>
+</div>
+
+<div class="ledger">
+  <div class="fig">
+    <div class="l">Units sold ({{ D.days }}d)</div>
+    <div class="v">{{ D.tot_units|n }}</div>
+    <div class="s">{{ D.avg_per_or_day|n(2) }} per OR day</div>
+  </div>
+  <div class="fig">
+    <div class="l">OR sales ({{ D.days }}d)</div>
+    <div class="v">{{ D.tot_sales|php(0) }}</div>
+    <div class="s">{{ 'Short shelf life' if D.perishable else 'Standard shelf life' }}</div>
+  </div>
+  <div class="fig">
+    <div class="l">BM write-offs ({{ D.days }}d)</div>
+    <div class="v">{{ D.tot_bmu|n }} units</div>
+    <div class="s">{{ D.tot_bmc|php }} cost ({{ D.tot_bmu|pct(D.tot_units) }} of sold)</div>
+  </div>
+  <div class="fig">
+    <div class="l">Unit economics (from BM)</div>
+    {% if D.econ %}
+    <div class="v">{{ (100 * D.econ.margin_pct)|n(1) }}% margin</div>
+    <div class="s">Cost {{ D.econ.unit_cost|php }} &middot; Retail {{ D.econ.unit_retail|php }}</div>
+    {% else %}
+    <div class="v dim">-</div>
+    <div class="s">No BM slip cost record yet</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="charts" style="margin-top:20px">
+  <div class="chartbox">
+    <div class="charthead">
+      <h4>Daily units sold vs. BM ({{ D.days }}d)</h4>
+      <div class="key">
+        <span class="k-{{ D.group|gcls }}"><i></i>Sold</span>
+        <span><i style="background:var(--waste)"></i>BM</span>
+      </div>
+    </div>
+    {{ daily_svg|safe }}
+  </div>
+  <div class="chartbox">
+    <div class="charthead"><h4>Average units sold per weekday</h4></div>
+    {{ wk_svg|safe }}
+  </div>
+</div>
+
+<div class="twochart" style="margin-top:24px">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Ordering &amp; category settings</h2>
+      <span class="panel-meta">Saved per SKU</span>
+    </div>
+    <form method="post" class="settings-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Category override
+        <select name="cat_override">
+          <option value="">Auto ({{ D.group }})</option>
+          {% for g in D.avail_groups %}<option value="{{ g }}" {{ 'selected' if D.cat_override == g }}>{{ g }}</option>{% endfor %}
+        </select>
+      </label>
+      <div class="form-row">
+        <label>
+          On hand (units)
+          <input type="number" step="1" min="0" name="on_hand" value="{{ D.on_hand if D.on_hand is not none else '' }}" placeholder="Leave blank if uncounted">
+        </label>
+        <label>
+          Pack / case multiple
+          <input type="number" step="1" min="1" name="pack_size" value="{{ D.pack_size }}">
+        </label>
+      </div>
+      <button class="btn" type="submit">Save product settings</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>BM slip appearances</h2>
+      <span class="panel-meta">{{ D.bm_slips|length }} line(s)</span>
+    </div>
+    <div class="tblwrap">
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Doc ID</th><th>Status</th><th class="r">Qty</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead>
+        <tbody>
+        {% for s in D.bm_slips %}
+        <tr>
+          <td>{{ s.date|dfmt }}</td>
+          <td class="mono">{{ s.doc_id }}</td>
+          <td><span class="pill {{ 'HOLD' if (s.status or 'COMPLETED')|upper == 'COMPLETED' else 'CUT' }}">{{ s.status or 'COMPLETED' }}</span></td>
+          <td class="r">{{ s.qty|n }}</td>
+          <td class="r dim">{{ s.unit_cost|php }}</td>
+          <td class="r">{{ s.total_cost|php }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="dim">No BM slips recorded for this product in the window.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

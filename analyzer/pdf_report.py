@@ -540,3 +540,56 @@ def build_products_pdf(A):
     doc.addPageTemplates([PageTemplate(id='p', frames=[Frame(36, 40, A4[0] - 72, A4[1] - 76, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)], onPage=footer)])
     doc.build(story)
     return buf.getvalue()
+
+
+def build_par_pdf(A):
+    """Returns PDF bytes for a printable Mon-Sun Daily Par / Order Sheet (items with net_order > 0 or PAUSE)."""
+    rows, groups = A['rows'], A['groups']
+    title = f"Daily Par Order Sheet - {A['label']}"
+    w_pcts = [f"{100 * w:.0f}%" for w in A['weekday_weights']]
+    w_hdr = ' | '.join(f"{d} {p}" for d, p in zip(('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'), w_pcts))
+
+    def footer(c, doc):
+        c.saveState(); c.setFont('Helvetica', 6.8); c.setFillColor(GRAY)
+        c.drawString(36, 22, f"{title} - {A['scope_label']}")
+        c.drawRightString(A4[0] - 36, 22, f'Page {doc.page}')
+        c.restoreState()
+
+    story = [
+        Paragraph(escape(title), sTitle),
+        Paragraph(f"Weekday split from last {A['weekday_days']} OR days ({w_hdr})", sSub),
+        Spacer(1, 8),
+    ]
+    for g in groups:
+        g_rows = sorted(
+            [r for r in rows if r['group'] == g and (r.get('net_order', r['order']) > 0 or r['action'] == 'PAUSE')],
+            key=lambda r: (-r.get('net_order', r['order']), -r['sold'], r['name']),
+        )
+        if not g_rows:
+            continue
+        c_hex = COLORS.get(g)
+        story.append(CondPageBreak(110))
+        story.append(Paragraph(col(g, c_hex) if c_hex else escape(g), sH))
+        tot_net = sum(r.get('net_order', r['order']) for r in g_rows)
+        tot_pars = [sum(r['daily_pars'][i] for r in g_rows) for i in range(7)]
+        story.append(Paragraph(f"<b>{len(g_rows):,}</b> items | Net 7-day order: <b>{tot_net:,}</b> units", sB))
+        story.append(Spacer(1, 3))
+        nw = numw(len(g_rows))
+        d = [['#', 'Code', 'Product', 'Action', 'OH', 'Net 7d', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']]
+        for i, r in enumerate(g_rows, 1):
+            oh = f"{r['on_hand']:g}" if r.get('on_hand') is not None else '-'
+            pars = r['daily_pars']
+            d.append([str(i), str(r['code']), r['name'], act(r['action']), oh, f"{r.get('net_order', r['order'])}",
+                      *(str(x) for x in pars)])
+        d.append(['', '', 'Category Total', '', '', f"{tot_net:,}", *(f"{x:,}" for x in tot_pars)])
+        story.append(tbl(d, [nw, 48, 161 - nw, 44, 38, 36] + [28] * 7, ['L', 'L', 'L', 'L'] + ['R'] * 9, total_row=True, tight=True))
+        story.append(Spacer(1, 6))
+
+    if len(story) <= 3:
+        story.append(Paragraph('No items require ordering in this selection.', sB))
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=40, title=title)
+    doc.addPageTemplates([PageTemplate(id='p', frames=[Frame(36, 40, A4[0] - 72, A4[1] - 76, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)], onPage=footer)])
+    doc.build(story)
+    return buf.getvalue()

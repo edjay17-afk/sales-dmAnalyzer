@@ -26,14 +26,14 @@
           <span class="step-num">02</span>
           <div>
             <strong>Spot shrinkage fast</strong>
-            <span>Compare category waste rates against your 31-day baseline.</span>
+            <span>Compare category waste rates against your baseline and multi-week trends.</span>
           </div>
         </li>
         <li>
           <span class="step-num">03</span>
           <div>
             <strong>Export order guides</strong>
-            <span>Download A4 PDF briefs and full product CSVs.</span>
+            <span>Download A4 PDF briefs, daily Mon–Sun par sheets, and full product CSVs.</span>
           </div>
         </li>
       </ul>
@@ -48,6 +48,7 @@
       <div class="msg err" role="alert">{{ err }}</div>
       {% endif %}
       <form method="post" action="{{ url_for('login') }}" class="login-form" id="loginform">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="next" value="{{ next_url }}">
         <label>
           Username

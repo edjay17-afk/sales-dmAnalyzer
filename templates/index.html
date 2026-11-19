@@ -2,7 +2,7 @@
 {% block title %}BM &amp; Sales Analyzer{% endblock %}
 {% block header_actions %}
 {% if start %}
-<a class="btn quiet sm" href="{{ url_for('report', start=start, end=end) }}" id="latest-link">Latest report</a>
+<a class="btn sm" href="{{ url_for('report', start=start, end=end, store=store) }}" id="latest-link">Latest report</a>
 {% endif %}
 {% endblock %}
 
@@ -19,6 +19,7 @@
       <span class="panel-meta">OR daily reports &amp; BM slips</span>
     </div>
     <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" id="upform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="drop" id="drop" for="files">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -35,6 +36,14 @@
         <span class="cnt" id="count"></span>
       </div>
     </form>
+    {% if watch_folder %}
+    <form method="post" action="{{ url_for('history_scan') }}" class="scan-bar" id="scanform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="folder" value="{{ watch_folder }}">
+      <span class="note">Watch folder: <code>{{ watch_folder }}</code></span>
+      <button class="btn quiet sm" type="submit">Sync folder</button>
+    </form>
+    {% endif %}
   </section>
 
   <section class="panel" aria-labelledby="onfile-h">
@@ -72,14 +81,29 @@
     {% endif %}
     {% endif %}
 
-    <p class="note">Order suggestions compare each period against the prior 31 days. Re-uploading a day or slip replaces its previous entry.</p>
+    <p class="note">Order suggestions compare each period against the prior baseline window. Re-uploading a day or slip replaces its previous entry.</p>
 
     {% if start %}
     <div class="openbar">
       <h3>Open report for dates on file</h3>
+      <div class="preset-row" id="home-presets">
+        <button type="button" class="preset" data-p="7d">Last 7d</button>
+        <button type="button" class="preset" data-p="14d">Last 14d</button>
+        <button type="button" class="preset" data-p="30d">Last 30d</button>
+        <button type="button" class="preset" data-p="mon-sun">Last Mon–Sun</button>
+        <button type="button" class="preset" data-p="mtd">Month to date</button>
+      </div>
       <form method="get" action="{{ url_for('report') }}" id="openform">
-        <label>From<input type="date" name="start" value="{{ start }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
-        <label>To<input type="date" name="end" value="{{ end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+        {% if stores|length > 1 %}
+        <label>Store
+          <select name="store">
+            <option value="">All stores</option>
+            {% for st in stores %}<option value="{{ st }}" {{ 'selected' if store == st }}>{{ st }}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label>From<input type="date" name="start" id="home-start" value="{{ start }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+        <label>To<input type="date" name="end" id="home-end" value="{{ end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
         <button class="btn quiet" type="submit">Open report</button>
       </form>
       <p class="note">{{ 'Pre-filled with the uploaded PDF dates.' if request.args.get('start') else 'Defaults to the latest 7 days with OR data.' }}</p>
@@ -111,13 +135,26 @@ d.addEventListener('drop', function (ev) {
 document.getElementById('upform').addEventListener('submit', function () {
   window.showBusy('Reading your PDFs', 'This takes about 2 seconds per OR report.');
 });
+var sf = document.getElementById('scanform');
+if (sf) sf.addEventListener('submit', function () {
+  window.showBusy('Scanning watch folder', 'Checking for new OR and BM PDFs…');
+});
 var of = document.getElementById('openform');
 if (of) of.addEventListener('submit', function () {
-  window.showBusy('Building report', 'Crunching sales, BM, and 31-day baseline…');
+  window.showBusy('Building report', 'Crunching sales, BM, and baseline…');
 });
 var ll = document.getElementById('latest-link');
 if (ll) ll.addEventListener('click', function () {
-  window.showBusy('Building report', 'Crunching sales, BM, and 31-day baseline…');
+  window.showBusy('Building report', 'Crunching sales, BM, and baseline…');
 });
+var hp = document.getElementById('home-presets');
+if (hp) {
+  var hs = document.getElementById('home-start'), he = document.getElementById('home-end');
+  hp.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-p]');
+    if (!b || !hs || !he) return;
+    window.applyDatePreset(b.dataset.p, hs, he, hs.min, hs.max);
+  });
+}
 </script>
 {% endblock %}

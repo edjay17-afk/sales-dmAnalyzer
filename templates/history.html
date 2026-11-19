@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}History &amp; Audit — BM &amp; Sales Analyzer{% endblock %}
+
+{% block body %}
+<div class="page-head">
+  <h1>Data history &amp; audit</h1>
+  <p class="verdict-sub">Inspect uploaded OR days and BM slips, resolve uncategorized BM products, or sync from a local PDF folder.</p>
+</div>
+
+<div class="twochart" style="margin-top:0">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Watch folder sync</h2>
+      <span class="panel-meta">Local PDF directory</span>
+    </div>
+    <form method="post" action="{{ url_for('history_scan') }}" class="settings-form" id="scanform">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Folder path on this PC
+        <input type="text" name="folder" value="{{ watch_folder }}" placeholder="e.g. C:\Users\User\Downloads\StorePDFs" required>
+      </label>
+      <label class="chk-inline">
+        <input type="checkbox" name="rescan" value="1">
+        <span>Re-parse files already imported</span>
+      </label>
+      <button class="btn" type="submit">Scan folder for PDFs</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Coverage summary</h2>
+      {% if stores|length > 1 %}
+      <form method="get">
+        <select name="store" onchange="this.form.submit()">
+          <option value="">All stores ({{ stores|length }})</option>
+          {% for st in stores %}<option value="{{ st }}" {{ 'selected' if store == st }}>{{ st }}</option>{% endfor %}
+        </select>
+      </form>
+      {% elif stores %}
+      <span class="panel-meta">{{ stores[0] }}</span>
+      {% endif %}
+    </div>
+    <div class="facts">
+      <div class="f">
+        <span class="f-lbl">OR days on file</span>
+        <b>{{ cov.or_days }}</b>
+        <span>{{ (cov.or_min|dfmt ~ ' to ' ~ cov.or_max|dfmt) if cov.or_min else 'None' }}</span>
+      </div>
+      <div class="f">
+        <span class="f-lbl">BM slips on file</span>
+        <b>{{ cov.bm_slips }}</b>
+        <span>{{ (cov.bm_min|dfmt ~ ' to ' ~ cov.bm_max|dfmt) if cov.bm_min else 'None' }}</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+{% if uncat %}
+<section class="section" style="margin-top:28px">
+  <h2>Uncategorized BM items ({{ uncat|length }})</h2>
+  <p class="lead">These BM products never appeared on an OR Sales Monitor report and did not match name rules. Assign a category once to include them in category reports.</p>
+  <div class="tblwrap">
+    <table class="tbl">
+      <thead><tr><th>Code</th><th>Product</th><th class="r">Slips</th><th class="r">BM qty</th><th class="r">BM cost</th><th>Assign category</th></tr></thead>
+      <tbody>
+      {% for u in uncat %}
+      <tr>
+        <td class="mono"><a class="prod-link" href="{{ url_for('product_page', code=u.code) }}">{{ u.code }}</a></td>
+        <td class="name">{{ u.name }}</td>
+        <td class="r dim">{{ u.slips }}</td>
+        <td class="r">{{ u.qty|n }}</td>
+        <td class="r">{{ u.cost|php }}</td>
+        <td>
+          <form method="post" action="{{ url_for('history_map_category') }}" class="inline-map">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="code" value="{{ u.code }}">
+            <select name="cat_override" required>
+              <option value="">Choose category…</option>
+              {% for g in avail_groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+            </select>
+            <button class="btn quiet sm" type="submit">Map</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="section">
+  <h2>BM slips ({{ bm_slips|length }})</h2>
+  <p class="lead">Only slips with status <b>COMPLETED</b> are counted in shrinkage totals. Non-completed slips are highlighted below.</p>
+  <div class="tblwrap" style="max-height:420px; overflow-y:auto">
+    <table class="tbl">
+      <thead><tr><th>Date</th><th>Doc ID</th><th>Slip ID</th><th>Store</th><th>Status</th><th class="r">Lines</th><th class="r">Total cost</th><th class="r">Total retail</th><th>Warnings</th><th></th></tr></thead>
+      <tbody>
+      {% for s in bm_slips %}
+      {% set st = (s.status or 'COMPLETED')|upper %}
+      <tr>
+        <td>{{ s.date|dfmt }}</td>
+        <td class="mono">{{ s.doc_id }}</td>
+        <td class="mono dim">{{ s.slip_id or '-' }}</td>
+        <td class="dim">{{ s.store or '-' }}</td>
+        <td><span class="pill {{ 'HOLD' if st == 'COMPLETED' else 'CUT' }}">{{ st }}</span></td>
+        <td class="r dim">{{ s.line_count }}</td>
+        <td class="r">{{ s.total_cost|php }}</td>
+        <td class="r dim">{{ s.total_retail|php }}</td>
+        <td class="dim">{{ s.warnings or '-' }}</td>
+        <td class="r">
+          <form method="post" action="{{ url_for('history_delete_bm') }}" onsubmit="return confirm('Delete BM slip {{ s.doc_id }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="doc_id" value="{{ s.doc_id }}">
+            <button class="btn quiet sm danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="dim">No BM slips on file.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <h2>OR sales days ({{ or_days|length }})</h2>
+  <div class="tblwrap" style="max-height:420px; overflow-y:auto">
+    <table class="tbl">
+      <thead><tr><th>Date</th><th>Store</th><th>Source file</th><th class="r">Lines</th><th class="r">OR sales</th><th>Warnings</th><th>Uploaded</th><th></th></tr></thead>
+      <tbody>
+      {% for d in or_days %}
+      <tr>
+        <td><a class="prod-link" href="{{ url_for('report', start=d.date, end=d.date) }}">{{ d.date|dfmt }}</a></td>
+        <td class="dim">{{ d.store or '-' }}</td>
+        <td class="dim">{{ d.source or '-' }}</td>
+        <td class="r dim">{{ d.line_count }}</td>
+        <td class="r">{{ d.sales_total|php }}</td>
+        <td class="{{ 'warn-note' if d.warnings else 'dim' }}">{{ d.warnings or 'OK' }}</td>
+        <td class="dim">{{ d.uploaded_at or '-' }}</td>
+        <td class="r">
+          <form method="post" action="{{ url_for('history_delete_or') }}" onsubmit="return confirm('Delete OR sales for {{ d.date }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="date" value="{{ d.date }}">
+            <button class="btn quiet sm danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="dim">No OR days on file.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var sf = document.getElementById('scanform');
+if (sf) sf.addEventListener('submit', function () {
+  window.showBusy('Scanning watch folder', 'Reading PDFs in the configured directory…');
+});
+</script>
+{% endblock %}

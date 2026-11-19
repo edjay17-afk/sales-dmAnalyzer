@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Multi-Week Trends — BM &amp; Sales Analyzer{% endblock %}
+
+{% block header_actions %}
+<a class="btn quiet sm" href="{{ url_for('report', end=T.end, cat=T.scope_list, store=store) }}">Back to report</a>
+{% endblock %}
+
+{% block body %}
+<div class="report-head">
+  <div class="report-title">
+    <div class="eyebrow">
+      <span>Shrinkage &amp; Sales Trends</span>
+      <span class="sep">/</span>
+      <span class="scope">{{ T.scope_label }}</span>
+    </div>
+    <h1>Last {{ T.buckets|length }} rolling weeks</h1>
+    <p class="verdict-sub">7-day blocks ending {{ T.end|dfmt }}. Click any week in the table below to open its full report.</p>
+  </div>
+
+  <form class="filterbar" method="get" id="tf">
+    {% if stores|length > 1 %}
+    <label>Store
+      <select name="store">
+        <option value="">All stores</option>
+        {% for st in stores %}<option value="{{ st }}" {{ 'selected' if store == st }}>{{ st }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Weeks
+      <select name="weeks">
+        {% for w in [4, 8, 12, 16, 26] %}<option value="{{ w }}" {{ 'selected' if T.weeks == w }}>{{ w }} weeks</option>{% endfor %}
+      </select>
+    </label>
+    <label>End date<input type="date" name="end" value="{{ T.end }}" min="{{ cov.or_min }}" max="{{ cov.or_max }}"></label>
+    <div class="catpick">
+      <span class="lbl">Categories</span>
+      <details class="catbox" id="catbox">
+        <summary id="catsum">{% if T.sel is none %}All categories{% elif T.scope_list|length <= 2 %}{{ T.scope_list|join(', ') }}{% else %}{{ T.scope_list|length }} categories{% endif %}</summary>
+        <div class="catpanel">
+          <div class="catquick">
+            <button type="button" data-q="hmff">Hot Meals + Fresh Food</button>
+            <button type="button" data-q="hmffct">Hot Meals + Fresh Food + Crunch Time</button>
+            <button type="button" data-q="clear">All categories</button>
+          </div>
+          <div class="catlist" id="catlist">
+            {% for g, sales in T.all_groups %}
+            <label><input type="checkbox" name="cat" value="{{ g }}" {{ 'checked' if T.sel is none or g in T.sel }}><span class="cat g-{{ g|gcls }}">{{ g }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+    </div>
+    <button class="btn quiet" type="submit">Update</button>
+  </form>
+</div>
+
+<div class="charts">
+  <div class="chartbox">
+    <div class="charthead">
+      <h4>Weekly OR sales (PHP)</h4>
+      <div class="key">{% for s, c in legend %}<span class="k-{{ s|gcls }}"><i></i>{{ s }}</span>{% endfor %}</div>
+    </div>
+    {{ sales_svg|safe }}
+  </div>
+  <div class="chartbox">
+    <div class="charthead">
+      <h4>Weekly BM cost (PHP)</h4>
+      <div class="key">{% for s, c in legend %}<span class="k-{{ s|gcls }}"><i></i>{{ s }}</span>{% endfor %}</div>
+    </div>
+    {{ bm_svg|safe }}
+  </div>
+</div>
+
+<div class="chartbox" style="margin-top:16px">
+  <div class="charthead">
+    <h4>Weekly BM retail as % of OR sales</h4>
+    <span class="panel-meta">Lower is better</span>
+  </div>
+  {{ rate_svg|safe }}
+</div>
+
+<h3 class="sub-h">Week-by-week breakdown</h3>
+<div class="tblwrap">
+  <table class="tbl">
+    <thead><tr><th>Week</th><th class="r">OR days</th><th class="r">Units sold</th><th class="r">OR sales</th><th class="r">BM units</th><th class="r">BM cost</th><th class="r">BM retail</th><th class="r">BM % sales</th><th class="r">BM % units</th></tr></thead>
+    <tbody>
+    {% for b in T.buckets|reverse %}
+    <tr>
+      <td><a class="prod-link" href="{{ url_for('report', start=b.start, end=b.end, cat=T.scope_list, store=store) }}">{{ b.label }}</a></td>
+      <td class="r dim">{{ b.or_days }}/7</td>
+      <td class="r">{{ b.units|n }}</td>
+      <td class="r">{{ b.sales_total|php(0) }}</td>
+      <td class="r">{{ b.bmu|n }}</td>
+      <td class="r">{{ b.bmc_total|php }}</td>
+      <td class="r dim">{{ b.bmr|php }}</td>
+      <td class="r {{ 'rate hi' if b.bm_pct_sales >= 5 }}">{{ b.bm_pct_sales|pct }}</td>
+      <td class="r dim">{{ b.bm_pct_units|pct }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="dim">No weekly data available.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var boxes = document.querySelectorAll('#catlist input[type=checkbox]'), sum = document.getElementById('catsum'), catbox = document.getElementById('catbox');
+  function summary() {
+    var on = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).map(function (b) { return b.value; });
+    sum.textContent = !on.length ? 'None selected' : on.length === boxes.length ? 'All categories' : on.length <= 2 ? on.join(', ') : on.length + ' categories';
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', summary); });
+  var panel = document.querySelector('.catpanel');
+  if (panel) panel.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-q]');
+    if (!btn) return;
+    var q = btn.dataset.q, focus = ['Hot Meals', 'Fresh Food', 'Crunch Time'];
+    if (q === 'clear') boxes.forEach(function (b) { b.checked = true; });
+    else {
+      var pick = q === 'hmff' ? ['Hot Meals', 'Fresh Food'] : focus;
+      boxes.forEach(function (b) { b.checked = pick.indexOf(b.value) !== -1; });
+    }
+    summary();
+  });
+  document.addEventListener('click', function (e) {
+    if (catbox && catbox.open && !catbox.contains(e.target)) catbox.open = false;
+  });
+})();
+</script>
+{% endblock %}

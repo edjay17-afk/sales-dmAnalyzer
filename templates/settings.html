@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Settings — BM &amp; Sales Analyzer{% endblock %}
+
+{% block body %}
+<div class="page-head">
+  <h1>Model &amp; account settings</h1>
+  <p class="verdict-sub">Tune demand windows, waste-rate action thresholds, perishable categories, and account security.</p>
+</div>
+
+<div class="twochart" style="margin-top:0">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Ordering model parameters</h2>
+      <form method="post" onsubmit="return confirm('Reset all model settings to defaults?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="reset" value="1">
+        <button class="btn quiet sm" type="submit">Reset defaults</button>
+      </form>
+    </div>
+    <form method="post" class="settings-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-row">
+        <label>
+          Baseline window (days)
+          <input type="number" name="baseline_days" min="7" max="180" value="{{ cfg.baseline_days }}">
+        </label>
+        <label>
+          Weekday par window (days)
+          <input type="number" name="weekday_days" min="7" max="180" value="{{ cfg.weekday_days }}">
+        </label>
+        <label>
+          Regular seller min days
+          <input type="number" name="regular_days" min="1" max="60" value="{{ cfg.regular_days }}">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
+          Cut waste threshold (%)
+          <input type="number" step="0.5" min="1" max="100" name="cut_rate" value="{{ (cfg.cut_rate|float * 100)|round(1) }}">
+        </label>
+        <label>
+          Cut multiplier
+          <input type="number" step="0.05" min="0.1" max="1" name="cut_factor" value="{{ cfg.cut_factor }}">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
+          Trim waste threshold (%)
+          <input type="number" step="0.5" min="1" max="99" name="trim_rate" value="{{ (cfg.trim_rate|float * 100)|round(1) }}">
+        </label>
+        <label>
+          Trim multiplier
+          <input type="number" step="0.05" min="0.1" max="1" name="trim_factor" value="{{ cfg.trim_factor }}">
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>
+          Increase max waste (%)
+          <input type="number" step="0.5" min="0" max="50" name="increase_rate" value="{{ (cfg.increase_rate|float * 100)|round(1) }}">
+        </label>
+        <label>
+          Increase min weekly demand
+          <input type="number" step="0.5" min="1" name="increase_min_demand" value="{{ cfg.increase_min_demand }}">
+        </label>
+        <label>
+          Increase multiplier
+          <input type="number" step="0.05" min="1" max="2" name="increase_factor" value="{{ cfg.increase_factor }}">
+        </label>
+      </div>
+
+      <label>
+        Short shelf-life category prefixes (comma-separated OR codes)
+        <input type="text" name="perishable_cats" value="{{ cfg.perishable_cats }}">
+      </label>
+
+      <label>
+        Default watch folder for PDFs
+        <input type="text" name="watch_folder" value="{{ cfg.watch_folder }}" placeholder="Optional local folder path">
+      </label>
+
+      <button class="btn" type="submit">Save model settings</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Account security</h2>
+      <span class="panel-meta">Signed in as {{ session['user'] }}</span>
+    </div>
+    <form method="post" action="{{ url_for('change_password') }}" class="settings-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Current password
+        <input type="password" name="current_password" autocomplete="current-password" required>
+      </label>
+      <label>
+        New password (min 6 characters)
+        <input type="password" name="new_password" autocomplete="new-password" minlength="6" required>
+      </label>
+      <label>
+        Confirm new password
+        <input type="password" name="confirm_password" autocomplete="new-password" minlength="6" required>
+      </label>
+      <button class="btn" type="submit">Update password</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

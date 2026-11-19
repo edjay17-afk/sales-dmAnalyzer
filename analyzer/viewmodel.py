@@ -28,37 +28,41 @@ def _delta(cur, prev, good_when):
 
 def headline(A):
     T, tot, b = A['T'], A['tot'], A['base']
+    bdays = (A.get('cfg') or {}).get('baseline_days', 31)
     cur = _pct(T['bmr'], T['sales'])
     if T['bmc'] == 0:
-        extra = f" Over the 31 days before there was {php(b['T']['bmc'])} of BM." if b and b['T']['bmc'] else ''
+        extra = f" Over the {bdays} days before there was {php(b['T']['bmc'])} of BM." if b and b['T']['bmc'] else ''
         return 'No bad merchandise was recorded in this period.', f"OR sales were {php(T['sales'], 0)} across {T['units']:,.0f} units.{extra}"
     title = f"Bad merchandise cost {php(T['bmc'])}, which is {pct1(cur)} of sales."
     parts = []
     if b:
         old = _pct(b['T']['bmr'], b['T']['sales'])
         if abs(cur - old) < 0.15:
-            parts.append(f"That is about the same as the 31 days before ({pct1(old)}).")
+            parts.append(f"That is about the same as the {bdays} days before ({pct1(old)}).")
         elif cur < old:
-            parts.append(f"That is lower than the 31 days before ({pct1(old)}).")
+            parts.append(f"That is lower than the {bdays} days before ({pct1(old)}).")
         else:
-            parts.append(f"That is higher than the 31 days before ({pct1(old)}).")
+            parts.append(f"That is higher than the {bdays} days before ({pct1(old)}).")
     if T['bmc'] > 0 and T['sales'] > 0 and len(A['groups']) > 1:
         bg = max(A['groups'], key=lambda g: tot[g]['bmc'])
         parts.append(f"{bg} is {_pct(tot[bg]['sales'], T['sales']):.0f}% of sales and {_pct(tot[bg]['bmc'], T['bmc']):.0f}% of the loss.")
     return title, ' '.join(parts)
 
 
-def kpis(A, order_total):
+def kpis(A, order_total, net_order_total=None):
     T, prev, b = A['T'], A['prev'], A['base']
     pv = prev['T'] if prev else None
     base_pct = f" (baseline {pct1(_pct(b['T']['bmu'], b['T']['units']))})" if b else ''
     n_orders = sum(1 for r in A['rows'] if r['order'] > 0)
+    shown_order = net_order_total if net_order_total is not None else order_total
+    has_oh = any(r.get('on_hand') is not None or r.get('pack_size', 1) > 1 for r in A['rows'])
+    sub_order = f"Across {n_orders:,} products" + (f" (raw {order_total:,.0f})" if has_oh and shown_order != order_total else '')
     return [
         {'label': 'BM loss at cost', 'value': php(T['bmc']), 'sub': f"Retail value {php(T['bmr'])}", 'delta': _delta(T['bmc'], pv['bmc'] if pv else None, 'down')},
         {'label': 'Units written off', 'value': f"{T['bmu']:,.0f}", 'sub': f"{pct1(_pct(T['bmu'], T['units']))} of units sold{base_pct}", 'delta': None},
         {'label': 'OR sales', 'value': php(T['sales'], 0), 'sub': f"{T['units']:,.0f} units, {T['skus']:,.0f} products in {len(A['groups'])} categor{'ies' if len(A['groups']) != 1 else 'y'}",
          'delta': _delta(T['sales'], pv['sales'] if pv else None, 'up')},
-        {'label': 'Suggested order, next 7 days', 'value': f"{order_total:,.0f} units", 'sub': f"Across {n_orders:,} products", 'delta': None},
+        {'label': 'Suggested order, next 7 days', 'value': f"{shown_order:,.0f} units", 'sub': sub_order, 'delta': None},
     ]
 
 
@@ -70,21 +74,25 @@ def order_brief(rows):
 
 
 def category_orders(A):
-    """Per category: product count, expected weekly demand, suggested order, est. received (perishables only)."""
+    """Per category: product count, expected weekly demand, suggested order, net order, est. received (perishables only)."""
     out = {}
     for r in A['rows']:
-        x = out.setdefault(r['group'], {'products': 0, 'demand': 0.0, 'order': 0, 'est': 0.0, 'perishable': r['perishable']})
+        x = out.setdefault(r['group'], {'products': 0, 'demand': 0.0, 'order': 0, 'net_order': 0, 'est': 0.0, 'perishable': r['perishable'], 'daily_pars': [0] * 7})
         x['products'] += 1 if r['sold'] > 0 else 0
-        x['demand'] += r['D']; x['order'] += r['order']; x['est'] += r['est_received'] * 7.0 / A['n']
+        x['demand'] += r['D']; x['order'] += r['order']; x['net_order'] += r.get('net_order', r['order'])
+        x['est'] += r['est_received'] * 7.0 / A['n']
+        for i, p in enumerate(r.get('daily_pars') or (0,) * 7):
+            x['daily_pars'][i] += p
     return [(g, out[g]) for g in A['groups'] if g in out]
 
 
-def coverage_strip(con, days=70):
-    dates = set(db.or_dates(con))
+def coverage_strip(con, days=70, store=None):
+    dates = set(db.or_dates(con, store=store))
     if not dates:
         return None
     end = max(dates)
-    bm = {r[0]: r[1] for r in con.execute('SELECT date, COUNT(*) FROM bm_slips GROUP BY date')}
+    q = 'SELECT date, COUNT(*) FROM bm_slips' + (' WHERE store=?' if store else '') + ' GROUP BY date'
+    bm = {r[0]: r[1] for r in con.execute(q, (store,) if store else ())}
     e = datetime.strptime(end, '%Y-%m-%d')
     s = max(e - timedelta(days=days - 1), datetime.strptime(min(dates), '%Y-%m-%d'))
     cells = [None] * s.weekday()  # pad so rows are Mon..Sun
