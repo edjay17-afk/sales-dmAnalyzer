@@ -212,7 +212,8 @@ def no_cache_html(resp):
 def _ingest_pdf(con, source_bytes_or_path, name, existing_stores):
     p = parse_pdf(source_bytes_or_path)
     store = (p.get('store') or '').strip()
-    if store and existing_stores and store not in existing_stores:
+    warn_mismatch = db.get_settings(con).get('warn_store_mismatch', '1') == '1'
+    if warn_mismatch and store and existing_stores and store not in existing_stores:
         p['warnings'].append(f"Store '{store}' differs from existing store(s) ({', '.join(sorted(existing_stores))})")
     if p['kind'] == 'or':
         status = db.save_or(con, p, name)
@@ -385,7 +386,8 @@ def report():
                            sales_svg=charts_svg.daily_svg(A, 'sales', 'Daily OR sales (PHP)'),
                            bm_svg=charts_svg.daily_svg(A, 'bmc', 'Daily BM cost (PHP)'),
                            wk_units_svg=charts_svg.weekday_svg(A, 'units', 'Average units sold per weekday'),
-                           wk_sales_svg=charts_svg.weekday_svg(A, 'sales', 'Average sales per weekday (PHP)'))
+                           wk_sales_svg=charts_svg.weekday_svg(A, 'sales', 'Average sales per weekday (PHP)'),
+                           wk_bmc_svg=charts_svg.weekday_svg(A, 'bmc', 'Average BM cost per weekday (PHP)'))
 
 
 @app.route('/api/report-rows')
@@ -428,6 +430,7 @@ def api_report_rows():
             'so': r['stockout_risk'], 'tz': r['trailing_zero'],
             'gm': round(100 * r['margin_pct']) if r['margin_pct'] is not None else None,
             'uc': r['unit_cost'], 'ur': r['unit_retail'],
+            'swk': round(r['S_wk'], 1), 'd': round(r['D'], 1), 'mp': r['min_par'], 'ov': r['action_override'],
         } for r in full_rows[100:]]
 
     return jsonify(out)
@@ -644,6 +647,7 @@ def trends():
         sales_svg=charts_svg.trend_svg(T, 'sales', 'Weekly OR sales (PHP)'),
         bm_svg=charts_svg.trend_svg(T, 'bmc', 'Weekly BM cost (PHP)'),
         rate_svg=charts_svg.trend_rate_svg(T, 'Weekly BM % of sales'),
+        backtest=analysis.backtest_accuracy(con, end=T['end'], weeks=4, scope=cat, store=store),
     )
 
 
@@ -741,15 +745,34 @@ def history_scan():
     return redirect(request.referrer or url_for('history'))
 
 
+def _category_choices(con):
+    known = {
+        '25': 'Bread & Bakery', '27': 'Donuts', '36': 'Crunch Time', '37': 'Dairy',
+        '39': 'Hot Meals', '40': 'Hotdog / Siopao', '41': 'City Cafe', '43': 'Fresh Food', '46': 'Fresh Food',
+    }
+    for r in con.execute('SELECT DISTINCT cat FROM or_lines'):
+        pfx = analysis.cat_prefix(r[0])
+        if pfx not in analysis.EXCLUDE and pfx not in known:
+            known[pfx] = analysis.group_name(r[0])
+    return sorted(known.items(), key=lambda kv: kv[0])
+
+
 @app.route('/settings', methods=['GET', 'POST'])
 def settings_page():
     con = get_db()
+    tab = request.args.get('tab') or 'stores'
     if request.method == 'POST':
         if request.form.get('reset'):
             db.save_settings(con, db.DEFAULT_SETTINGS)
             flash(('ok', 'Model settings reset to defaults.'))
-            return redirect(url_for('settings_page'))
+            return redirect(url_for('settings_page', tab='rules'))
         try:
+            picked = [x.strip() for x in request.form.getlist('perishable_pick') if x.strip()]
+            extra = [x.strip() for x in request.form.get('perishable_extra', '').split(',') if x.strip()]
+            if picked or extra:
+                perish_str = ','.join(sorted(set(picked) | set(extra)))
+            else:
+                perish_str = ','.join(x.strip() for x in request.form.get('perishable_cats', '').split(',') if x.strip())
             updates = {
                 'baseline_days': str(max(7, min(180, int(request.form.get('baseline_days', 31))))),
                 'weekday_days': str(max(7, min(180, int(request.form.get('weekday_days', 45))))),
@@ -761,19 +784,91 @@ def settings_page():
                 'increase_rate': f"{max(0.0, min(0.5, float(request.form.get('increase_rate', 3)) / 100.0)):.4f}",
                 'increase_min_demand': f"{max(1.0, float(request.form.get('increase_min_demand', 5))):.1f}",
                 'increase_factor': f"{max(1.0, min(2.0, float(request.form.get('increase_factor', 1.10)))):.2f}",
-                'perishable_cats': ','.join(x.strip() for x in request.form.get('perishable_cats', '').split(',') if x.strip()),
-                'watch_folder': (request.form.get('watch_folder') or '').strip(),
+                'perishable_cats': perish_str,
             }
+            if 'watch_folder' in request.form:
+                updates['watch_folder'] = (request.form.get('watch_folder') or '').strip()
             if float(updates['trim_rate']) >= float(updates['cut_rate']):
                 raise ValueError('Trim waste % must be lower than Cut waste %.')
         except ValueError as e:
             flash(('err', f'Invalid setting: {e}'))
-            return redirect(url_for('settings_page'))
+            return redirect(url_for('settings_page', tab='rules'))
         db.save_settings(con, updates)
-        flash(('ok', 'Settings saved.'))
-        return redirect(url_for('settings_page'))
+        flash(('ok', 'Ordering rules saved.'))
+        return redirect(url_for('settings_page', tab='rules'))
     cfg = db.get_settings(con)
-    return render_template('settings.html', cfg=cfg)
+    perish_set = {x.strip() for x in cfg['perishable_cats'].split(',') if x.strip()}
+    cat_choices = _category_choices(con)
+    known_pfx = {p for p, _ in cat_choices}
+    perish_extra = ','.join(sorted(perish_set - known_pfx))
+    return render_template(
+        'settings.html',
+        cfg=cfg,
+        tab=tab,
+        stores_list=db.stores_detail(con),
+        cat_choices=cat_choices,
+        perish_set=perish_set,
+        perish_extra=perish_extra,
+        overrides=db.list_rule_overrides(con),
+    )
+
+
+@app.route('/settings/stores', methods=['POST'])
+def settings_stores():
+    con = get_db()
+    action = request.form.get('action') or 'save'
+    if action == 'add':
+        name = (request.form.get('name') or '').strip()
+        alias = (request.form.get('alias') or '').strip() or name
+        if name:
+            db.upsert_store(con, name, alias=alias)
+            flash(('ok', f'Added store {name}.'))
+    elif action == 'set_default':
+        name = (request.form.get('name') or '').strip()
+        if name:
+            db.upsert_store(con, name, is_default=True)
+            flash(('ok', f'Set {name} as default store.'))
+    elif action == 'remove':
+        name = (request.form.get('name') or '').strip()
+        if name and db.delete_store(con, name):
+            flash(('ok', f'Removed store config for {name}.'))
+    else:
+        for name, alias in zip(request.form.getlist('store_name'), request.form.getlist('store_alias')):
+            db.upsert_store(con, name, alias=alias)
+        db.save_settings(con, {
+            'warn_store_mismatch': '1' if request.form.get('warn_store_mismatch') else '0',
+            'watch_folder': (request.form.get('watch_folder') or '').strip(),
+        })
+        flash(('ok', 'Store settings saved.'))
+    return redirect(url_for('settings_page', tab='stores'))
+
+
+@app.route('/settings/override', methods=['POST'])
+def settings_override():
+    con = get_db()
+    code = (request.form.get('code') or '').strip()
+    if not code:
+        flash(('err', 'Product code is required.'))
+        return redirect(url_for('settings_page', tab='exceptions'))
+    if request.form.get('remove'):
+        db.upsert_product_meta(con, code, action_override=None, min_par=None, pack_size=1)
+        flash(('ok', f'Cleared rule override for {code}.'))
+    else:
+        ao = (request.form.get('action_override') or '').strip().upper() or None
+        if ao not in (None, 'PAUSE', 'CUT', 'TRIM', 'INCREASE', 'HOLD'):
+            ao = None
+        try:
+            ps = max(1, int(request.form.get('pack_size') or 1))
+        except ValueError:
+            ps = 1
+        mp_s = (request.form.get('min_par') or '').strip()
+        try:
+            mp = max(0.0, float(mp_s)) if mp_s != '' else None
+        except ValueError:
+            mp = None
+        db.upsert_product_meta(con, code, action_override=ao, pack_size=ps, min_par=mp)
+        flash(('ok', f'Saved rule override for {code}.'))
+    return redirect(url_for('settings_page', tab='exceptions'))
 
 
 @app.route('/settings/password', methods=['POST'])

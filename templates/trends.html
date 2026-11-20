@@ -102,6 +102,28 @@
     </tbody>
   </table>
 </div>
+
+{% if backtest %}
+<h3 class="sub-h">Forecast accuracy backtest (last 4 completed weeks)</h3>
+<p class="note" style="margin-top:0">Compares each week's expected weekly demand (D) against actual units sold in the following 7 days. Negative bias means actual sales beat forecast.</p>
+<div class="tblwrap" style="margin-top:10px">
+  <table class="tbl">
+    <thead><tr><th>Category</th><th class="r">SKUs tested</th><th class="r">Forecasted units</th><th class="r">Actual units</th><th class="r">Bias %</th><th class="r">Avg error (WAPE)</th></tr></thead>
+    <tbody>
+    {% for b in backtest %}
+    <tr>
+      <td><span class="cat g-{{ b.group|gcls }}">{{ b.group }}</span></td>
+      <td class="r dim">{{ b.skus|n }}</td>
+      <td class="r">{{ b.pred|n }}</td>
+      <td class="r">{{ b.actual|n }}</td>
+      <td class="r">{{ '%+.1f%%'|format(b.bias_pct) }}</td>
+      <td class="r dim">{{ '%.1f%%'|format(b.wape_pct) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

@@ -145,6 +145,17 @@
   <h3 class="sub-h">What stands out</h3>
   <ul class="points">{% for b in A.bullets %}<li>{{ b|safe }}</li>{% endfor %}</ul>
 
+  {% if A.payday %}
+  <div class="payday-bar">
+    <div>
+      <b>Payday demand lift (15th / 30th):</b>
+      Payday windows average <b>{{ A.payday.payday_avg|php(0) }}/day</b> vs. <b>{{ A.payday.regular_avg|php(0) }}/day</b> on regular days
+      (<span class="{{ 'delta good' if A.payday.lift_pct >= 0 else 'delta bad' }}" style="display:inline">{{ '%+.1f%%'|format(A.payday.lift_pct) }}</span> across {{ A.payday.payday_days }} payday / {{ A.payday.regular_days }} regular days).
+    </div>
+    {% if A.payday.next_7d_payday %}<span class="badge-so">Next 7d includes payday</span>{% endif %}
+  </div>
+  {% endif %}
+
   <h3 class="sub-h">By category</h3>
   <div class="tblwrap"><table class="tbl">
     <thead><tr><th>Category</th><th class="r">Products</th><th class="r">Units</th><th class="r">OR sales</th><th></th><th class="r">BM units</th><th class="r">BM cost</th><th class="r">BM % units</th><th class="r">BM % sales*</th><th class="r">Base BM %</th></tr></thead>
@@ -159,6 +170,54 @@
       <td class="r">{{ A.T.bmu|pct(A.T.units) }}</td><td class="r">{{ A.T.bmr|pct(A.T.sales) }}</td><td class="r">{% if A.base %}{{ A.base.T.bmu|pct(A.base.T.units) }}{% else %}-{% endif %}</td></tr>
     </tbody></table></div>
   <p class="note">*BM retail value divided by OR sales, both at selling price. Ordered by sales.</p>
+
+  <details class="notes" style="margin-top:16px">
+    <summary>ABC Pareto &amp; profit-risk breakdown ({{ A.delist_candidates|length }} review candidate{{ 's' if A.delist_candidates|length != 1 }})</summary>
+    <div style="padding:12px 14px 14px; border-top:1px solid var(--line-soft); display:grid; gap:14px;">
+      <div class="tblwrap"><table class="tbl">
+        <thead><tr><th>ABC Class</th><th class="r">Products</th><th class="r">OR sales</th><th class="r">Sales share</th><th class="r">BM cost</th><th class="r">BM % of sales</th></tr></thead>
+        <tbody>
+        {% for cls, lbl in [('A', 'Class A (Top 80% sales)'), ('B', 'Class B (Next 15%)'), ('C', 'Class C (Bottom 5% tail)')] %}
+        {% set x = A.abc_summary[cls] %}
+        <tr><td><b>{{ lbl }}</b></td><td class="r">{{ x.count|n }}</td><td class="r">{{ x.sales|php(0) }}</td><td class="r dim">{{ x.sales|pct(A.T.sales) }}</td><td class="r">{{ x.bmcost|php }}</td><td class="r">{{ x.bmcost|pct(x.sales) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% if A.delist_candidates %}
+      <div>
+        <div class="sub-h" style="margin:0 0 6px">Net-negative / delist candidates (top 12)</div>
+        <div class="tblwrap"><table class="tbl">
+          <thead><tr><th>Product</th><th>Category</th><th>Class</th><th class="r">OR sales</th><th class="r">Est. GP</th><th class="r">BM cost</th><th class="r">Waste %</th></tr></thead>
+          <tbody>
+          {% for r in A.delist_candidates[:12] %}
+          <tr>
+            <td class="name">{{ prodlink(r.code, r.name) }}</td><td>{{ catlabel(r.group) }}</td><td class="mono">{{ r.abc }}</td>
+            <td class="r">{{ r.amt|php(0) }}</td><td class="r dim">{{ r.est_gp|php if r.est_gp is not none else '-' }}</td>
+            <td class="r rate hi">{{ r.bmcost|php }}</td><td class="r rate hi">{{ (100 * r.rate)|n }}%</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      {% endif %}
+      {% if A.price_alerts %}
+      <div>
+        <div class="sub-h" style="margin:0 0 6px">Realized price / promo shifts (&ge; 10% vs. baseline)</div>
+        <div class="tblwrap"><table class="tbl">
+          <thead><tr><th>Product</th><th>Category</th><th>Type</th><th class="r">Baseline price</th><th class="r">Period price</th><th class="r">Change</th></tr></thead>
+          <tbody>
+          {% for p in A.price_alerts[:10] %}
+          <tr>
+            <td class="name">{{ prodlink(p.code, p.name) }}</td><td>{{ catlabel(p.group) }}</td><td>{{ p.kind }}</td>
+            <td class="r dim">{{ p.prev|php }}</td><td class="r">{{ p.cur|php }}</td><td class="r">{{ '%+.1f%%'|format(p.chg_pct) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      {% endif %}
+    </div>
+  </details>
 
   <div class="twochart" style="margin-top: 28px;">
     <div>
@@ -325,10 +384,11 @@
   <p class="note">Daily pars distribute Net 7d across Mon–Sun using the last {{ A.weekday_days }} OR days' weekday demand share. <a class="prod-link" href="{{ url_for('report_par_pdf', start=A.start, end=A.end, cat=A.scope_list, store=store) }}">Download printable Daily Par PDF</a>.</p>
 
   <h3 class="sub-h">Day-of-week guide</h3>
-  <p class="note" style="margin-top:0">Averages over the last {{ A.weekday_days }} OR days for {{ A.scope_label|lower }}. Use to shape daily par levels.</p>
-  <div class="twochart" style="margin-top:12px">
+  <p class="note" style="margin-top:0">Averages over the last {{ A.weekday_days }} OR days for {{ A.scope_label|lower }}. Use to shape daily par levels and spot high-waste delivery days.</p>
+  <div class="threechart" style="margin-top:12px">
     <div class="chartbox"><div class="charthead"><h4>Units sold</h4></div>{{ wk_units_svg|safe }}</div>
     <div class="chartbox"><div class="charthead"><h4>OR sales (PHP)</h4></div>{{ wk_sales_svg|safe }}</div>
+    <div class="chartbox"><div class="charthead"><h4>BM cost (PHP)</h4></div>{{ wk_bmc_svg|safe }}</div>
   </div>
 
   <h3 class="sub-h">Every product</h3>
@@ -359,7 +419,7 @@
     <thead><tr><th>Product</th><th>Category</th><th>Action</th><th class="r">Sold</th><th class="r">BM</th><th class="r">Base/wk</th><th class="r">Waste</th><th class="r">Raw 7d</th><th class="r">On hand</th><th class="r">Pack</th><th class="r">Net 7d</th></tr></thead>
     <tbody>
     {% for r in S.full %}
-    <tr data-code="{{ r.code }}" data-a="{{ r.action }}" data-g="{{ r.group|lower }}" data-n="{{ r.name|lower }} {{ r.group|lower }} {{ r.code|lower }} {{ r.barcode|lower }}" data-sold="{{ r.sold }}" data-amt="{{ r.amt }}" data-rate="{{ r.rate }}" data-order="{{ r.net_order }}" data-raw="{{ r.order }}" data-name="{{ r.name|lower }}" {% if loop.index > 300 %}data-late="1" hidden{% endif %}>
+    <tr data-code="{{ r.code }}" data-pname="{{ r.name }}" data-a="{{ r.action }}" data-g="{{ r.group|lower }}" data-n="{{ r.name|lower }} {{ r.group|lower }} {{ r.code|lower }} {{ r.barcode|lower }}" data-sold="{{ r.sold }}" data-bm="{{ r.bm }}" data-amt="{{ r.amt }}" data-rate="{{ r.rate }}" data-order="{{ r.net_order }}" data-raw="{{ r.order }}" data-swk="{{ '%.1f'|format(r.S_wk) }}" data-bwk="{{ '%.1f'|format(r.base_wk) if r.inbase else 'new' }}" data-d="{{ '%.1f'|format(r.D) }}" data-mp="{{ r.min_par if r.min_par is not none else '' }}" data-ov="{{ r.action_override or '' }}" data-name="{{ r.name|lower }}" {% if loop.index > 300 %}data-late="1" hidden{% endif %}>
       <td class="name">
         {{ prodlink(r.code, r.name) }}
         {% if r.stockout_risk %}<span class="badge-so" title="Regular baseline seller with {{ r.trailing_zero }} trailing zero-sale days">Stockout?</span>{% endif %}
@@ -374,7 +434,7 @@
       <td class="r dim">{{ r.order }}</td>
       <td class="r"><input type="number" class="inline-num oh-inp" min="0" step="1" placeholder="-" value="{{ '%g'|format(r.on_hand) if r.on_hand is not none else '' }}" aria-label="On hand for {{ r.name }}"></td>
       <td class="r"><input type="number" class="inline-num pk-inp" min="1" step="1" value="{{ r.pack_size }}" aria-label="Pack size for {{ r.name }}"></td>
-      <td class="r"><span class="tag sm net-tag">{{ r.net_order }}</span></td>
+      <td class="r"><button type="button" class="tag sm net-tag" title="See why this number">{{ r.net_order }}</button></td>
     </tr>
     {% endfor %}
     </tbody></table></div>
@@ -410,6 +470,24 @@
     </ul>
   </details>
 </section>
+
+<div class="why-backdrop" id="why-modal" hidden>
+  <div class="why-dialog" role="dialog" aria-modal="true" aria-labelledby="why-title">
+    <div class="why-head">
+      <div>
+        <div class="eyebrow" style="margin-bottom:2px">Order breakdown</div>
+        <h3 id="why-title" style="margin:0; font-size:16px"></h3>
+      </div>
+      <button type="button" class="btn quiet sm" id="why-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="why-hero">
+      <div><span class="pill" id="why-pill"></span></div>
+      <div class="why-qty"><small>Net 7d order</small><b id="why-net"></b></div>
+    </div>
+    <div class="why-eq" id="why-eq"></div>
+    <div class="why-steps" id="why-steps"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -476,14 +554,14 @@
           var actTitle = o.act.charAt(0) + o.act.slice(1).toLowerCase();
           var badges = (o.so ? ' <span class="badge-so" title="Regular baseline seller with ' + o.tz + ' trailing zero-sale days">Stockout?</span>' : '') +
             (o.gm !== null ? ' <span class="badge-margin">' + o.gm + '% GM</span>' : '');
-          h3.push('<tr data-code="' + escHtml(o.c) + '" data-a="' + escHtml(o.act) + '" data-g="' + escHtml(o.g.toLowerCase()) + '" data-n="' + escHtml((o.n + ' ' + o.g + ' ' + o.c + ' ' + (o.bc || '')).toLowerCase()) + '" data-sold="' + o.s + '" data-amt="' + o.a + '" data-rate="' + o.rt + '" data-order="' + o.net + '" data-raw="' + o.raw + '" data-name="' + escHtml(o.n.toLowerCase()) + '" hidden>' +
+          h3.push('<tr data-code="' + escHtml(o.c) + '" data-pname="' + escHtml(o.n) + '" data-a="' + escHtml(o.act) + '" data-g="' + escHtml(o.g.toLowerCase()) + '" data-n="' + escHtml((o.n + ' ' + o.g + ' ' + o.c + ' ' + (o.bc || '')).toLowerCase()) + '" data-sold="' + o.s + '" data-bm="' + o.bm + '" data-amt="' + o.a + '" data-rate="' + o.rt + '" data-order="' + o.net + '" data-raw="' + o.raw + '" data-swk="' + o.swk + '" data-bwk="' + escHtml(o.bw) + '" data-d="' + o.d + '" data-mp="' + (o.mp !== null ? o.mp : '') + '" data-ov="' + escHtml(o.ov || '') + '" data-name="' + escHtml(o.n.toLowerCase()) + '" hidden>' +
             '<td class="name">' + prodLinkHtml(o.c, o.n) + badges + '</td><td>' + catLabelHtml(o.g, o.gc) + '</td>' +
             '<td><span class="pill ' + escHtml(o.act) + '">' + escHtml(actTitle) + '</span></td>' +
             '<td class="r">' + fmtInt(o.s) + '</td><td class="r">' + (o.bm ? fmtInt(o.bm) : '-') + '</td><td class="r dim">' + escHtml(o.bw) + '</td>' +
             '<td class="r rate ' + (o.rt >= 0.25 ? 'hi' : '') + '">' + Math.round(100 * o.rt) + '%</td><td class="r dim">' + o.raw + '</td>' +
             '<td class="r"><input type="number" class="inline-num oh-inp" min="0" step="1" placeholder="-" value="' + (o.oh !== null ? o.oh : '') + '" aria-label="On hand for ' + escHtml(o.n) + '"></td>' +
             '<td class="r"><input type="number" class="inline-num pk-inp" min="1" step="1" value="' + o.pk + '" aria-label="Pack size for ' + escHtml(o.n) + '"></td>' +
-            '<td class="r"><span class="tag sm net-tag">' + o.net + '</span></td></tr>');
+            '<td class="r"><button type="button" class="tag sm net-tag" title="See why this number">' + o.net + '</button></td></tr>');
         }
         tbody.insertAdjacentHTML('beforeend', h3.join(''));
         rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-a]'));
@@ -644,6 +722,38 @@
   // Inline On-Hand & Pack persistence
   var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
   if (tbody) {
+    tbody.addEventListener('click', function (e) {
+      var btn = e.target.closest('button.net-tag');
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      var act = tr.dataset.a;
+      var pname = tr.dataset.pname || tr.querySelector('.prod-link').textContent;
+      var swk = tr.dataset.swk, bwk = tr.dataset.bwk, d = tr.dataset.d;
+      var raw = tr.dataset.raw, net = tr.dataset.order;
+      var rate = (100 * parseFloat(tr.dataset.rate || '0')).toFixed(1);
+      var oh = tr.querySelector('.oh-inp').value;
+      var pk = tr.querySelector('.pk-inp').value || '1';
+      var mp = tr.dataset.mp, ov = tr.dataset.ov;
+      document.getElementById('why-title').textContent = pname;
+      var pill = document.getElementById('why-pill');
+      pill.className = 'pill ' + act;
+      pill.textContent = act;
+      document.getElementById('why-net').textContent = net + ' units';
+      document.getElementById('why-eq').innerHTML =
+        '<div><small>Demand/wk</small><b>' + escHtml(d) + '</b></div><span>&rarr;</span>' +
+        '<div><small>Raw 7d</small><b>' + escHtml(raw) + '</b></div><span>&minus;</span>' +
+        '<div><small>On hand</small><b>' + (oh !== '' ? escHtml(oh) : '0') + '</b></div><span>=</span>' +
+        '<div><small>Net (pack ' + escHtml(pk) + ')</small><b>' + escHtml(net) + '</b></div>';
+      var steps = [];
+      steps.push('<div class="why-step"><b>1. Expected weekly demand (' + escHtml(d) + ')</b><span>Current week pace: ' + escHtml(swk) + '/wk' + (bwk === 'new' ? ' (new item, no baseline)' : ' · 31d baseline: ' + escHtml(bwk) + '/wk (50/50 blend)') + '</span></div>');
+      steps.push('<div class="why-step"><b>2. Waste rule (' + escHtml(act) + ')</b><span>Blended waste rate: ' + rate + '% (' + escHtml(tr.dataset.bm || '0') + ' BM vs ' + escHtml(tr.dataset.sold || '0') + ' sold)' + (ov ? ' · Locked via SKU override' : '') + '</span></div>');
+      steps.push('<div class="why-step"><b>3. Adjustments</b><span>Raw 7d = ' + escHtml(raw) + (mp ? ' (min par ' + escHtml(mp) + ')' : '') + ' · On hand = ' + (oh !== '' ? escHtml(oh) : 'not entered') + ' · Pack = ' + escHtml(pk) + '</span></div>');
+      document.getElementById('why-steps').innerHTML = steps.join('');
+      document.getElementById('why-modal').hidden = false;
+    });
+    var wm = document.getElementById('why-modal'), wc = document.getElementById('why-close');
+    if (wc) wc.addEventListener('click', function () { wm.hidden = true; });
+    if (wm) wm.addEventListener('click', function (e) { if (e.target === wm) wm.hidden = true; });
     tbody.addEventListener('change', function (e) {
       var inp = e.target.closest('.oh-inp, .pk-inp');
       if (!inp) return;

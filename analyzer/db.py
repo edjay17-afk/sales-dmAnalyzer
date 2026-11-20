@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = {
     'increase_factor': '1.10',
     'perishable_cats': '25,27,36,37,39,40,41,43,46',
     'watch_folder': '',
+    'warn_store_mismatch': '1',
 }
 
 SCHEMA = """
@@ -35,8 +36,9 @@ CREATE INDEX IF NOT EXISTS ix_bm_lines_doc ON bm_lines(doc_id);
 CREATE INDEX IF NOT EXISTS ix_bm_lines_code ON bm_lines(code);
 CREATE INDEX IF NOT EXISTS ix_bm_slips_date ON bm_slips(date);
 CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at TEXT);
-CREATE TABLE IF NOT EXISTS product_meta (code TEXT PRIMARY KEY, barcode TEXT, cat_override TEXT, pack_size INTEGER DEFAULT 1, on_hand REAL, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS product_meta (code TEXT PRIMARY KEY, barcode TEXT, cat_override TEXT, pack_size INTEGER DEFAULT 1, on_hand REAL, action_override TEXT, min_par REAL, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS stores (name TEXT PRIMARY KEY, alias TEXT, is_default INTEGER DEFAULT 0, created_at TEXT);
 """
 
 
@@ -44,6 +46,13 @@ def _migrate(con):
     cols = {r['name'] for r in con.execute('PRAGMA table_info(or_lines)')}
     if 'barcode' not in cols:
         con.execute('ALTER TABLE or_lines ADD COLUMN barcode TEXT')
+        con.commit()
+    pm_cols = {r['name'] for r in con.execute('PRAGMA table_info(product_meta)')}
+    if 'action_override' not in pm_cols:
+        con.execute('ALTER TABLE product_meta ADD COLUMN action_override TEXT')
+        con.commit()
+    if 'min_par' not in pm_cols:
+        con.execute('ALTER TABLE product_meta ADD COLUMN min_par REAL')
         con.commit()
 
 
@@ -185,20 +194,83 @@ def get_product_meta(con):
     return {r['code']: dict(r) for r in con.execute('SELECT * FROM product_meta')}
 
 
-def upsert_product_meta(con, code, cat_override=..., pack_size=..., on_hand=...):
+def upsert_product_meta(con, code, cat_override=..., pack_size=..., on_hand=..., action_override=..., min_par=...):
     cur = con.execute('SELECT * FROM product_meta WHERE code=?', (code,)).fetchone()
     existing = dict(cur) if cur else {}
     co = existing.get('cat_override') if cat_override is ... else (cat_override or None)
     ps = existing.get('pack_size', 1) if pack_size is ... else max(1, int(pack_size or 1))
     oh = existing.get('on_hand') if on_hand is ... else on_hand
+    ao = existing.get('action_override') if action_override is ... else (action_override or None)
+    mp = existing.get('min_par') if min_par is ... else min_par
     bc = existing.get('barcode')
     con.execute(
-        'INSERT INTO product_meta (code, barcode, cat_override, pack_size, on_hand, updated_at) VALUES (?,?,?,?,?,?) '
+        'INSERT INTO product_meta (code, barcode, cat_override, pack_size, on_hand, action_override, min_par, updated_at) VALUES (?,?,?,?,?,?,?,?) '
         'ON CONFLICT(code) DO UPDATE SET cat_override=excluded.cat_override, pack_size=excluded.pack_size, '
-        'on_hand=excluded.on_hand, updated_at=excluded.updated_at',
-        (code, bc, co, ps, oh, _now()),
+        'on_hand=excluded.on_hand, action_override=excluded.action_override, min_par=excluded.min_par, updated_at=excluded.updated_at',
+        (code, bc, co, ps, oh, ao, mp, _now()),
     )
     con.commit()
+
+
+def list_rule_overrides(con):
+    rows = con.execute(
+        'SELECT m.*, '
+        'COALESCE((SELECT name FROM or_lines o WHERE o.code=m.code ORDER BY date DESC LIMIT 1), '
+        '(SELECT name FROM bm_lines b WHERE b.code=m.code LIMIT 1), m.code) AS name '
+        'FROM product_meta m '
+        'WHERE m.action_override IS NOT NULL OR m.min_par IS NOT NULL OR COALESCE(m.pack_size, 1) > 1 OR m.cat_override IS NOT NULL '
+        'ORDER BY m.updated_at DESC, m.code'
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def stores_detail(con):
+    or_cnt = {r['store']: r['c'] for r in con.execute('SELECT store, COUNT(*) AS c FROM or_days WHERE store IS NOT NULL AND store<>"" GROUP BY store')}
+    bm_cnt = {r['store']: r['c'] for r in con.execute('SELECT store, COUNT(*) AS c FROM bm_slips WHERE store IS NOT NULL AND store<>"" GROUP BY store')}
+    cfg = {r['name']: dict(r) for r in con.execute('SELECT * FROM stores')}
+    names = sorted(set(or_cnt) | set(bm_cnt) | set(cfg))
+    has_default = any(v.get('is_default') for v in cfg.values())
+    out = []
+    for idx, n in enumerate(names):
+        c = cfg.get(n, {})
+        out.append({
+            'name': n,
+            'alias': c.get('alias') or n,
+            'is_default': bool(c.get('is_default')) or (not has_default and idx == 0),
+            'configured': n in cfg,
+            'or_days': or_cnt.get(n, 0),
+            'bm_slips': bm_cnt.get(n, 0),
+        })
+    return out
+
+
+def default_store(con):
+    row = con.execute('SELECT name FROM stores WHERE is_default=1 LIMIT 1').fetchone()
+    if row:
+        return row['name']
+    s = stores(con)
+    return s[0] if s else None
+
+
+def upsert_store(con, name, alias=None, is_default=False):
+    name = (name or '').strip()
+    if not name:
+        return
+    if is_default:
+        con.execute('UPDATE stores SET is_default=0')
+    con.execute(
+        'INSERT INTO stores (name, alias, is_default, created_at) VALUES (?,?,?,?) '
+        'ON CONFLICT(name) DO UPDATE SET alias=COALESCE(excluded.alias, stores.alias), '
+        'is_default=CASE WHEN excluded.is_default=1 THEN 1 ELSE stores.is_default END',
+        (name, (alias or '').strip() or name, 1 if is_default else 0, _now()),
+    )
+    con.commit()
+
+
+def delete_store(con, name):
+    cur = con.execute('DELETE FROM stores WHERE name=?', (name,))
+    con.commit()
+    return cur.rowcount > 0
 
 
 def get_settings(con):

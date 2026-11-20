@@ -3,109 +3,396 @@
 
 {% block body %}
 <div class="page-head">
-  <h1>Model &amp; account settings</h1>
-  <p class="verdict-sub">Tune demand windows, waste-rate action thresholds, perishable categories, and account security.</p>
+  <h1>Settings — Stores &amp; Ordering Rules</h1>
+  <p class="verdict-sub">Manage store branches, tune the ordering decision ladder and perishable categories, set SKU exceptions, and update your password.</p>
 </div>
 
-<div class="twochart" style="margin-top:0">
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Ordering model parameters</h2>
-      <form method="post" onsubmit="return confirm('Reset all model settings to defaults?');">
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" aria-selected="{{ 'true' if tab == 'stores' else 'false' }}" data-tab="stores">Stores ({{ stores_list|length }})</button>
+  <button class="tab" role="tab" aria-selected="{{ 'true' if tab == 'rules' else 'false' }}" data-tab="rules">Ordering Rules</button>
+  <button class="tab" role="tab" aria-selected="{{ 'true' if tab == 'exceptions' else 'false' }}" data-tab="exceptions">Exceptions &amp; Security</button>
+</div>
+
+<!-- TAB 1: STORES -->
+<section id="tab-stores" {{ 'hidden' if tab != 'stores' }}>
+  <div class="grid-2">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Configured stores</h2>
+        <span class="panel-meta">Auto-detected from uploaded PDFs</span>
+      </div>
+
+      <form method="post" action="{{ url_for('settings_stores') }}" id="stores-save-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="reset" value="1">
-        <button class="btn quiet sm" type="submit">Reset defaults</button>
+        <input type="hidden" name="action" value="save">
+        <div class="tblwrap">
+          <table class="tbl">
+            <thead>
+              <tr><th>PDF Store Name</th><th>Display Alias</th><th class="r">OR days</th><th class="r">BM slips</th><th>Status</th><th class="r">Actions</th></tr>
+            </thead>
+            <tbody>
+            {% for s in stores_list %}
+            <tr>
+              <td class="mono">{{ s.name }}</td>
+              <td>
+                <input type="hidden" name="store_name" value="{{ s.name }}">
+                <input type="text" name="store_alias" value="{{ s.alias }}" style="width:160px">
+              </td>
+              <td class="r">{{ s.or_days|n }}</td>
+              <td class="r">{{ s.bm_slips|n }}</td>
+              <td>
+                {% if s.is_default %}
+                <span class="pill DEFAULT">Default</span>
+                {% else %}
+                <span class="pill HOLD">Active</span>
+                {% endif %}
+              </td>
+              <td class="r">
+                {% if not s.is_default %}
+                <button class="btn quiet sm" type="submit" form="def-{{ loop.index }}">Set default</button>
+                {% endif %}
+                {% if s.configured and s.or_days == 0 and s.bm_slips == 0 %}
+                <button class="btn quiet sm danger" type="submit" form="rem-{{ loop.index }}">Remove</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="dim">No stores on file yet. Upload a PDF or add a store below.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:14px; display:grid; gap:10px;">
+          <div class="switch-row">
+            <div>
+              <b>Warn on store mismatch</b>
+              <span>Show a warning if an uploaded PDF belongs to a different store than existing data.</span>
+            </div>
+            <input type="checkbox" name="warn_store_mismatch" value="1" {{ 'checked' if cfg.warn_store_mismatch == '1' }}>
+          </div>
+          <label class="lbl-stack">
+            Default watch folder (local PC only)
+            <input type="text" name="watch_folder" value="{{ cfg.watch_folder }}" placeholder="Optional local folder path">
+          </label>
+          <div><button class="btn" type="submit">Save store settings</button></div>
+        </div>
       </form>
+
+      {% for s in stores_list %}
+      {% if not s.is_default %}
+      <form method="post" action="{{ url_for('settings_stores') }}" id="def-{{ loop.index }}" hidden>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="set_default">
+        <input type="hidden" name="name" value="{{ s.name }}">
+      </form>
+      {% endif %}
+      {% if s.configured and s.or_days == 0 and s.bm_slips == 0 %}
+      <form method="post" action="{{ url_for('settings_stores') }}" id="rem-{{ loop.index }}" hidden>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="remove">
+        <input type="hidden" name="name" value="{{ s.name }}">
+      </form>
+      {% endif %}
+      {% endfor %}
+
+      <form method="post" action="{{ url_for('settings_stores') }}" class="store-add">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="add">
+        <label class="lbl-stack">PDF store name<input type="text" name="name" placeholder="e.g. 6218-Minglanilla" required></label>
+        <label class="lbl-stack">Display alias<input type="text" name="alias" placeholder="e.g. Minglanilla Branch"></label>
+        <button class="btn quiet" type="submit">+ Add store</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Branch reporting guide</h2>
+        <span class="panel-meta">How stores work</span>
+      </div>
+      <p class="note">Each OR Sales Monitor and Bad Merchandise PDF carries a store header. When multiple stores are on file, a <b>Store</b> selector appears on the Upload, Report, Trends, and History pages so each branch's sales, shrinkage, and 31-day baseline stay separate.</p>
+      <p class="note">Setting a <b>Display Alias</b> keeps reports readable while matching incoming PDFs by their exact printed store name.</p>
+    </section>
+  </div>
+</section>
+
+<!-- TAB 2: ORDERING RULES -->
+<section id="tab-rules" {{ 'hidden' if tab != 'rules' }}>
+  <form method="post" action="{{ url_for('settings_page') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid-2">
+      <div class="stack-panels">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Action decision ladder</h2>
+            <button class="btn quiet sm" type="submit" name="reset" value="1" onclick="return confirm('Reset all ordering rules to defaults?');">Reset defaults</button>
+          </div>
+
+          <div class="rule-list">
+            <div class="rule-card PAUSE">
+              <div><span class="pill PAUSE">1. Pause</span></div>
+              <div>
+                <div class="rule-inputs">When units sold in period = <b>0</b> (with or without BM)</div>
+                <div class="rule-desc">Holds ordering until shelf availability or delisting is checked.</div>
+              </div>
+              <div class="tag sm">0&times;</div>
+            </div>
+
+            <div class="rule-card CUT">
+              <div><span class="pill CUT">2. Cut</span></div>
+              <div>
+                <div class="rule-inputs">
+                  Waste rate &ge; <input type="number" id="r-cut-rate" name="cut_rate" value="{{ (cfg.cut_rate|float * 100)|round(1) }}" min="1" max="100" step="0.5">% and BM &ge; 1
+                  &rarr; multiply demand by <input type="number" id="r-cut-fac" name="cut_factor" value="{{ cfg.cut_factor }}" min="0.1" max="1" step="0.05">
+                </div>
+                <div class="rule-desc">Aggressive reduction for chronic high-shrinkage SKUs.</div>
+              </div>
+              <div class="tag sm" id="tag-cut">-30%</div>
+            </div>
+
+            <div class="rule-card TRIM">
+              <div><span class="pill TRIM">3. Trim</span></div>
+              <div>
+                <div class="rule-inputs">
+                  Waste rate &ge; <input type="number" id="r-trim-rate" name="trim_rate" value="{{ (cfg.trim_rate|float * 100)|round(1) }}" min="1" max="99" step="0.5">%
+                  &rarr; multiply demand by <input type="number" id="r-trim-fac" name="trim_factor" value="{{ cfg.trim_factor }}" min="0.1" max="1" step="0.05">
+                </div>
+                <div class="rule-desc">Moderate trim when write-offs exceed acceptable range.</div>
+              </div>
+              <div class="tag sm" id="tag-trim">-15%</div>
+            </div>
+
+            <div class="rule-card INCREASE">
+              <div><span class="pill INCREASE">4. Increase</span></div>
+              <div>
+                <div class="rule-inputs">
+                  Perishable &amp; waste &lt; <input type="number" id="r-inc-rate" name="increase_rate" value="{{ (cfg.increase_rate|float * 100)|round(1) }}" min="0" max="50" step="0.5">%
+                  &amp; demand &ge; <input type="number" id="r-inc-min" name="increase_min_demand" value="{{ cfg.increase_min_demand }}" min="1" step="0.5">/wk
+                  &rarr; <input type="number" id="r-inc-fac" name="increase_factor" value="{{ cfg.increase_factor }}" min="1" max="2" step="0.05">&times;
+                </div>
+                <div class="rule-desc">Small buffer above demand for fast, low-waste perishables.</div>
+              </div>
+              <div class="tag sm" id="tag-inc">+10%</div>
+            </div>
+
+            <div class="rule-card HOLD">
+              <div><span class="pill HOLD">5. Hold</span></div>
+              <div>
+                <div class="rule-inputs">All other active products</div>
+                <div class="rule-desc">Order expected weekly demand (50% current week + 50% baseline).</div>
+              </div>
+              <div class="tag sm">1.0&times;</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Perishable categories &amp; history windows</h2>
+            <span class="panel-meta">Eligible for Increase buffer</span>
+          </div>
+
+          <div class="cat-chips">
+            {% for pfx, label in cat_choices %}
+            <label class="cat-chip"><input type="checkbox" name="perishable_pick" value="{{ pfx }}" {{ 'checked' if pfx in perish_set }}> {{ pfx }} &middot; {{ label }}</label>
+            {% endfor %}
+          </div>
+
+          <label class="lbl-stack" style="margin-bottom:12px;">
+            Additional OR prefixes (comma-separated, optional)
+            <input type="text" name="perishable_extra" value="{{ perish_extra }}" placeholder="e.g. 48,50">
+          </label>
+
+          <div class="form-row">
+            <label class="lbl-stack">Baseline window (days)<input type="number" name="baseline_days" value="{{ cfg.baseline_days }}" min="7" max="180"></label>
+            <label class="lbl-stack">Weekday par window (days)<input type="number" name="weekday_days" value="{{ cfg.weekday_days }}" min="7" max="180"></label>
+            <label class="lbl-stack">Regular seller min days<input type="number" name="regular_days" value="{{ cfg.regular_days }}" min="1" max="60"></label>
+          </div>
+
+          <div style="margin-top:16px;">
+            <button class="btn" type="submit">Save ordering rules</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Live rule tester</h2>
+          <span class="panel-meta">Preview how rules classify a SKU</span>
+        </div>
+        <div class="sim-box">
+          <div class="sim-grid">
+            <label class="lbl-stack">Sold (7d)<input type="number" id="sim-sold" value="12" min="0"></label>
+            <label class="lbl-stack">Baseline / wk<input type="number" id="sim-base" value="10" min="0"></label>
+            <label class="lbl-stack">BM units (7d)<input type="number" id="sim-bm" value="0" min="0"></label>
+            <label class="lbl-stack">Category type
+              <select id="sim-perish">
+                <option value="1">Perishable (e.g. Hot Meals)</option>
+                <option value="0">Standard (e.g. Grocery)</option>
+              </select>
+            </label>
+          </div>
+          <div class="sim-result">
+            <div>
+              <span class="pill" id="sim-pill">INCREASE</span>
+              <div class="note" id="sim-reason" style="margin-top:4px;">Demand 11.0/wk &middot; Waste 0.0%</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="note">Suggested 7d</div>
+              <span class="tag" id="sim-order">13</span>
+            </div>
+          </div>
+        </div>
+        <p class="note">Adjusting thresholds or multipliers in the ladder on the left updates this preview immediately before saving.</p>
+      </section>
     </div>
-    <form method="post" class="settings-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="form-row">
-        <label>
-          Baseline window (days)
-          <input type="number" name="baseline_days" min="7" max="180" value="{{ cfg.baseline_days }}">
-        </label>
-        <label>
-          Weekday par window (days)
-          <input type="number" name="weekday_days" min="7" max="180" value="{{ cfg.weekday_days }}">
-        </label>
-        <label>
-          Regular seller min days
-          <input type="number" name="regular_days" min="1" max="60" value="{{ cfg.regular_days }}">
-        </label>
+  </form>
+</section>
+
+<!-- TAB 3: EXCEPTIONS & SECURITY -->
+<section id="tab-exceptions" {{ 'hidden' if tab != 'exceptions' }}>
+  <div class="grid-2">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>SKU rule overrides</h2>
+        <span class="panel-meta">Pin minimums, pack multiples, or lock action</span>
       </div>
 
-      <div class="form-row">
-        <label>
-          Cut waste threshold (%)
-          <input type="number" step="0.5" min="1" max="100" name="cut_rate" value="{{ (cfg.cut_rate|float * 100)|round(1) }}">
-        </label>
-        <label>
-          Cut multiplier
-          <input type="number" step="0.05" min="0.1" max="1" name="cut_factor" value="{{ cfg.cut_factor }}">
-        </label>
+      <div class="tblwrap">
+        <table class="tbl">
+          <thead><tr><th>Code</th><th>Product</th><th>Rule override</th><th class="r">Pack</th><th class="r">Min par</th><th class="r"></th></tr></thead>
+          <tbody>
+          {% for o in overrides %}
+          <tr>
+            <td class="mono"><a class="prod-link" href="{{ url_for('product_page', code=o.code) }}">{{ o.code }}</a></td>
+            <td class="name">{{ o.name }}</td>
+            <td>
+              {% if o.action_override %}
+              <span class="pill {{ o.action_override }}">Always {{ o.action_override|title }}</span>
+              {% else %}
+              <span class="dim">Auto{% if o.cat_override %} ({{ o.cat_override }}){% endif %}</span>
+              {% endif %}
+            </td>
+            <td class="r">{{ o.pack_size or 1 }}</td>
+            <td class="r">{{ '%g'|format(o.min_par) if o.min_par is not none else '-' }}</td>
+            <td class="r">
+              <form method="post" action="{{ url_for('settings_override') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="code" value="{{ o.code }}">
+                <input type="hidden" name="remove" value="1">
+                <button class="btn quiet sm danger" type="submit">Clear</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="dim">No SKU rule overrides configured yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
 
-      <div class="form-row">
-        <label>
-          Trim waste threshold (%)
-          <input type="number" step="0.5" min="1" max="99" name="trim_rate" value="{{ (cfg.trim_rate|float * 100)|round(1) }}">
+      <form method="post" action="{{ url_for('settings_override') }}" class="store-add" style="grid-template-columns: 110px 1fr 80px 90px auto;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="lbl-stack">Item code<input type="text" name="code" placeholder="39850166" required></label>
+        <label class="lbl-stack">Rule override
+          <select name="action_override">
+            <option value="">Auto (use ladder)</option>
+            <option value="HOLD">Always HOLD</option>
+            <option value="INCREASE">Always INCREASE</option>
+            <option value="TRIM">Always TRIM</option>
+            <option value="CUT">Always CUT</option>
+            <option value="PAUSE">Always PAUSE</option>
+          </select>
         </label>
-        <label>
-          Trim multiplier
-          <input type="number" step="0.05" min="0.1" max="1" name="trim_factor" value="{{ cfg.trim_factor }}">
-        </label>
+        <label class="lbl-stack">Pack<input type="number" name="pack_size" value="1" min="1"></label>
+        <label class="lbl-stack">Min par<input type="number" name="min_par" min="0" step="1" placeholder="-"></label>
+        <button class="btn quiet" type="submit">Save</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Account security</h2>
+        <span class="panel-meta">Signed in as {{ session['user'] }}</span>
       </div>
-
-      <div class="form-row">
+      <form method="post" action="{{ url_for('change_password') }}" class="settings-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>
-          Increase max waste (%)
-          <input type="number" step="0.5" min="0" max="50" name="increase_rate" value="{{ (cfg.increase_rate|float * 100)|round(1) }}">
+          Current password
+          <input type="password" name="current_password" autocomplete="current-password" required>
         </label>
         <label>
-          Increase min weekly demand
-          <input type="number" step="0.5" min="1" name="increase_min_demand" value="{{ cfg.increase_min_demand }}">
+          New password (min 6 characters)
+          <input type="password" name="new_password" autocomplete="new-password" minlength="6" required>
         </label>
         <label>
-          Increase multiplier
-          <input type="number" step="0.05" min="1" max="2" name="increase_factor" value="{{ cfg.increase_factor }}">
+          Confirm new password
+          <input type="password" name="confirm_password" autocomplete="new-password" minlength="6" required>
         </label>
-      </div>
+        <button class="btn" type="submit">Update password</button>
+      </form>
+    </section>
+  </div>
+</section>
+{% endblock %}
 
-      <label>
-        Short shelf-life category prefixes (comma-separated OR codes)
-        <input type="text" name="perishable_cats" value="{{ cfg.perishable_cats }}">
-      </label>
+{% block scripts %}
+<script>
+(function () {
+  // Tabs
+  document.querySelectorAll('.tab[data-tab]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab[data-tab]').forEach(function (b) { b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
+      ['stores', 'rules', 'exceptions'].forEach(function (id) {
+        var el = document.getElementById('tab-' + id);
+        if (el) el.hidden = btn.dataset.tab !== id;
+      });
+    });
+  });
 
-      <label>
-        Default watch folder for PDFs
-        <input type="text" name="watch_folder" value="{{ cfg.watch_folder }}" placeholder="Optional local folder path">
-      </label>
+  // Live Rule Tester
+  function runSim() {
+    var cutR = parseFloat(document.getElementById('r-cut-rate').value || 25) / 100;
+    var cutF = parseFloat(document.getElementById('r-cut-fac').value || 0.7);
+    var trimR = parseFloat(document.getElementById('r-trim-rate').value || 10) / 100;
+    var trimF = parseFloat(document.getElementById('r-trim-fac').value || 0.85);
+    var incR = parseFloat(document.getElementById('r-inc-rate').value || 3) / 100;
+    var incM = parseFloat(document.getElementById('r-inc-min').value || 5);
+    var incF = parseFloat(document.getElementById('r-inc-fac').value || 1.1);
 
-      <button class="btn" type="submit">Save model settings</button>
-    </form>
-  </section>
+    document.getElementById('tag-cut').textContent = Math.round((cutF - 1) * 100) + '%';
+    document.getElementById('tag-trim').textContent = Math.round((trimF - 1) * 100) + '%';
+    document.getElementById('tag-inc').textContent = '+' + Math.round((incF - 1) * 100) + '%';
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Account security</h2>
-      <span class="panel-meta">Signed in as {{ session['user'] }}</span>
-    </div>
-    <form method="post" action="{{ url_for('change_password') }}" class="settings-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>
-        Current password
-        <input type="password" name="current_password" autocomplete="current-password" required>
-      </label>
-      <label>
-        New password (min 6 characters)
-        <input type="password" name="new_password" autocomplete="new-password" minlength="6" required>
-      </label>
-      <label>
-        Confirm new password
-        <input type="password" name="confirm_password" autocomplete="new-password" minlength="6" required>
-      </label>
-      <button class="btn" type="submit">Update password</button>
-    </form>
-  </section>
-</div>
+    var sold = parseFloat(document.getElementById('sim-sold').value || 0);
+    var base = parseFloat(document.getElementById('sim-base').value || 0);
+    var bm = parseFloat(document.getElementById('sim-bm').value || 0);
+    var perish = document.getElementById('sim-perish').value === '1';
+
+    var D = 0.5 * sold + 0.5 * base;
+    var denom = sold + bm + base;
+    var rate = denom > 0 ? bm / denom : 0;
+    var act = 'HOLD', fac = 1.0;
+    if (sold === 0) { act = 'PAUSE'; fac = 0; }
+    else if (rate >= cutR && bm >= 1) { act = 'CUT'; fac = cutF; }
+    else if (rate >= trimR) { act = 'TRIM'; fac = trimF; }
+    else if (perish && rate < incR && D >= incM) { act = 'INCREASE'; fac = incF; }
+
+    var order = act === 'PAUSE' ? 0 : (act === 'INCREASE' ? Math.max(1, Math.ceil(D * fac)) : Math.max(1, Math.round(D * fac)));
+    var pill = document.getElementById('sim-pill');
+    pill.className = 'pill ' + act;
+    pill.textContent = act;
+    document.getElementById('sim-reason').textContent = 'Demand ' + D.toFixed(1) + '/wk · Waste ' + (100 * rate).toFixed(1) + '%';
+    document.getElementById('sim-order').textContent = order;
+  }
+  ['r-cut-rate','r-cut-fac','r-trim-rate','r-trim-fac','r-inc-rate','r-inc-min','r-inc-fac','sim-sold','sim-base','sim-bm','sim-perish'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', runSim);
+      el.addEventListener('change', runSim);
+    }
+  });
+  runSim();
+})();
+</script>
 {% endblock %}

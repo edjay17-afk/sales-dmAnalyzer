@@ -188,9 +188,23 @@ class RouteTests(unittest.TestCase):
             'csrf_token': csrf, 'baseline_days': '31', 'weekday_days': '45', 'regular_days': '6',
             'cut_rate': '25', 'cut_factor': '0.70', 'trim_rate': '10', 'trim_factor': '0.85',
             'increase_rate': '3', 'increase_min_demand': '5', 'increase_factor': '1.10',
-            'perishable_cats': '39,43', 'watch_folder': '',
+            'perishable_pick': ['39', '43'], 'watch_folder': '',
         }, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
+
+        # Store settings add & set_default
+        resp = self.client.post('/settings/stores', data={
+            'csrf_token': csrf, 'action': 'add', 'name': '6218-Branch2', 'alias': 'Branch 2',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Branch 2', resp.get_data(as_text=True))
+
+        # SKU rule override save & clear
+        resp = self.client.post('/settings/override', data={
+            'csrf_token': csrf, 'code': '39000001', 'action_override': 'HOLD', 'pack_size': '6', 'min_par': '12',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Always Hold', resp.get_data(as_text=True))
 
         resp = self.client.post('/history/delete-bm', data={'csrf_token': csrf, 'doc_id': 'BM_DRAFT_2'}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)

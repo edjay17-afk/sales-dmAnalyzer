@@ -70,10 +70,11 @@ def daily_svg(A, key, title):
 
 
 def weekday_svg(A, metric, title):
-    """Average per weekday. metric: 'units' or 'sales'."""
+    """Average per weekday. metric: 'units', 'sales', or 'bmc'."""
     order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     vals = [v or 0 for v in A['weekday'][metric]]
-    return _weekday_bars(order, vals, series_class(A['series'][0]) if len(A['series']) == 1 else 'b-all', title)
+    cls = 'b-waste' if metric == 'bmc' else (series_class(A['series'][0]) if len(A['series']) == 1 else 'b-all')
+    return _weekday_bars(order, vals, cls, title)
 
 
 def _weekday_bars(order, vals, cls, title):

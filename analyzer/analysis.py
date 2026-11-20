@@ -289,12 +289,19 @@ def analyze(con, start, end, scope=None, store=None):
     wcount = [0] * 7
     for dd in wdates:
         wcount[_d(dd).weekday()] += 1
-    weekday = {'units': [], 'sales': []}
+    weekday = {'units': [], 'sales': [], 'bmc': []}
+    wbmc = defaultdict(float)
+    for l in db.bm_lines(con, ws_, end, store=store):
+        g, _ = cat.bm_group(l['code'], l['name'])
+        if sel is None or g in sel:
+            wbmc[(_d(l['date']).weekday(), l['date'])] += l['total_cost']
     for i in range(7):
         us = [v for (w, _), v in wu.items() if w == i]
         ss = [v for (w, _), v in wsales.items() if w == i]
+        bs_wd = [v for (w, _), v in wbmc.items() if w == i]
         weekday['units'].append(sum(us) / wcount[i] if wcount[i] else None)
         weekday['sales'].append(sum(ss) / wcount[i] if wcount[i] else None)
+        weekday['bmc'].append(sum(bs_wd) / wcount[i] if wcount[i] else None)
 
     valid_wu = [v for v in weekday['units'] if v is not None and v > 0]
     avg_wu = (sum(valid_wu) / len(valid_wu)) if valid_wu else 1.0
@@ -329,7 +336,18 @@ def analyze(con, start, end, scope=None, store=None):
         denom = (S_wk + B_wk) + (O + Bo_w)
         rate = (B_wk + Bo_w) / denom if denom > 0 else 0.0
         perish = src['cat'] in perishable_set
-        if S == 0:
+        meta = cat.meta.get(code, {})
+        act_ov = meta.get('action_override')
+        min_par = meta.get('min_par')
+        if act_ov in ('PAUSE', 'CUT', 'TRIM', 'INCREASE', 'HOLD'):
+            act = act_ov
+            if act == 'PAUSE':
+                order = 0
+            else:
+                fac = {'CUT': cfg['cut_factor'], 'TRIM': cfg['trim_factor'], 'INCREASE': cfg['increase_factor'], 'HOLD': 1.0}[act]
+                o = D * fac
+                order = max(1, math.ceil(round(o, 6))) if act == 'INCREASE' else max(1, int(o + 0.5))
+        elif S == 0:
             act, order = 'PAUSE', 0
         else:
             if rate >= cfg['cut_rate'] and B >= 1:
@@ -342,8 +360,9 @@ def analyze(con, start, end, scope=None, store=None):
                 act, fac = 'HOLD', 1.0
             o = D * fac
             order = max(1, math.ceil(round(o, 6))) if act == 'INCREASE' else max(1, int(o + 0.5))
+        if min_par is not None and min_par > 0 and act != 'PAUSE':
+            order = max(order, int(math.ceil(min_par)))
 
-        meta = cat.meta.get(code, {})
         on_hand = meta.get('on_hand')
         pack_size = max(1, int(meta.get('pack_size') or 1))
         if order == 0:
@@ -394,6 +413,7 @@ def analyze(con, start, end, scope=None, store=None):
             'unit_cost': ec['unit_cost'] if ec else None,
             'unit_retail': ec['unit_retail'] if ec else None,
             'margin_pct': margin_pct, 'est_gp': est_gp,
+            'S_wk': S_wk, 'B_wk': B_wk, 'Bo_w': Bo_w, 'min_par': min_par, 'action_override': act_ov,
         }
         rows.append(row)
         if stockout_risk:
@@ -449,6 +469,76 @@ def analyze(con, start, end, scope=None, store=None):
                             'base_bm': bbm[code]['qty'] if code in bbm else 0.0, 'prev': psales[code]['qty'] if code in psales else 0.0})
     notsold.sort(key=lambda x: -x['base_units'])
 
+    # ---- ABC Pareto classification (top 80% sales = A, next 15% = B, bottom 5% = C) & Delist candidates
+    tot_sales_all = sum(r['amt'] for r in rows)
+    abc_summary = {c: {'count': 0, 'sales': 0.0, 'bmcost': 0.0, 'bmu': 0.0, 'units': 0.0} for c in ('A', 'B', 'C')}
+    cum_sales = 0.0
+    for r in sorted(rows, key=lambda x: (-x['amt'], -x['sold'], x['name'])):
+        if r['amt'] <= 0 or tot_sales_all <= 0:
+            cls = 'C'
+        else:
+            share_before = cum_sales / tot_sales_all
+            cum_sales += r['amt']
+            cls = 'A' if share_before < 0.80 else ('B' if share_before < 0.95 else 'C')
+        r['abc'] = cls
+        s_abc = abc_summary[cls]
+        s_abc['count'] += 1
+        s_abc['sales'] += r['amt']
+        s_abc['bmcost'] += r['bmcost']
+        s_abc['bmu'] += r['bm']
+        s_abc['units'] += r['sold']
+    delist_candidates = sorted(
+        [
+            r for r in rows
+            if (r['est_gp'] is not None and r['bmcost'] > r['est_gp'] and r['bmcost'] > 0)
+            or (r['abc'] == 'C' and r['bmcost'] > 0 and r['rate'] >= cfg['cut_rate'])
+        ],
+        key=lambda r: -(r['bmcost'] - (r['est_gp'] or 0.0)),
+    )
+
+    # ---- Price / promo shifts vs baseline & supplier cost creep on BM slips
+    price_alerts = []
+    for r in rows:
+        sv = sales.get(r['code'])
+        bv_base = bsales.get(r['code'])
+        if sv and bv_base and r['sold'] >= 3 and r['base_sold'] >= 3:
+            cur_p = r['amt'] / r['sold']
+            base_p = bv_base['amt'] / r['base_sold']
+            if base_p > 0:
+                chg = (cur_p - base_p) / base_p
+                if abs(chg) >= 0.10:
+                    price_alerts.append({
+                        'code': r['code'], 'name': r['name'], 'group': r['group'],
+                        'kind': 'Promo / Drop' if chg < 0 else 'Price Increase',
+                        'cur': cur_p, 'prev': base_p, 'chg_pct': 100.0 * chg,
+                    })
+    price_alerts.sort(key=lambda x: -abs(x['chg_pct']))
+
+    # ---- Payday (15th / 30th) lift over last 120 days
+    payday_days_set = {14, 15, 16, 28, 29, 30, 31, 1}
+    pd_start = _iso(e - timedelta(days=119))
+    pd_by_day = defaultdict(float)
+    for l in db.or_lines(con, pd_start, end, store=store):
+        if cat_prefix(l['cat']) in EXCLUDE:
+            continue
+        grp, _ = cat.sales_group(l['code'], l['cat'])
+        if sel is None or grp in sel:
+            pd_by_day[l['date']] += l['amt']
+    pd_vals = [v for dt, v in pd_by_day.items() if _d(dt).day in payday_days_set]
+    reg_vals = [v for dt, v in pd_by_day.items() if _d(dt).day not in payday_days_set]
+    next_7_payday = any((e + timedelta(days=i)).day in payday_days_set for i in range(1, 8))
+    payday = None
+    if len(pd_vals) >= 4 and len(reg_vals) >= 8:
+        pd_avg = sum(pd_vals) / len(pd_vals)
+        reg_avg = sum(reg_vals) / len(reg_vals)
+        if reg_avg > 0:
+            payday = {
+                'payday_avg': pd_avg, 'regular_avg': reg_avg,
+                'lift_pct': 100.0 * (pd_avg - reg_avg) / reg_avg,
+                'payday_days': len(pd_vals), 'regular_days': len(reg_vals),
+                'next_7d_payday': next_7_payday,
+            }
+
     # ---- notes
     notes = []
     if missing:
@@ -478,7 +568,9 @@ def analyze(con, start, end, scope=None, store=None):
          'base_range': (bdates[0], bdates[-1]) if bdates else None, 'prev': prev, 'weekday': weekday, 'weekday_weights': weekday_weights,
          'weekday_n': wcount, 'weekday_days': len(wdates), 'notsold': notsold, 'stockouts': stockouts, 'notes': notes,
          'slips': len(slip_ids), 'bm_lines': lines_n, 'cat_prefix_perishable': sorted(perishable_set), 'cfg': cfg, 'store': store,
-         'margin_known': sum(1 for r in rows if r['margin_pct'] is not None), 'uncategorized': unc}
+         'margin_known': sum(1 for r in rows if r['margin_pct'] is not None), 'uncategorized': unc,
+         'abc_summary': abc_summary, 'delist_candidates': delist_candidates,
+         'price_alerts': price_alerts, 'payday': payday}
     A['bullets'] = _bullets(A)
     return A
 
@@ -698,3 +790,46 @@ def weekly_trends(con, end=None, weeks=12, scope=None, store=None):
         'all_groups': [(g, t['sales']) for g, t in all_groups],
         'groups': groups, 'series': series, 'buckets': active, 'store': store,
     }
+
+
+def backtest_accuracy(con, end=None, weeks=4, scope=None, store=None):
+    """Compare prior-week demand forecasts (D) against actual next-7-day sales across recent weeks."""
+    all_or = set(db.or_dates(con, store=store))
+    if not all_or:
+        return []
+    end = end if (end and end in all_or) else max(all_or)
+    e = _d(end)
+    cat = Catalog(con)
+    by_grp = defaultdict(lambda: {'pred': 0.0, 'actual': 0.0, 'abs_err': 0.0, 'skus': 0})
+    for wi in range(1, weeks + 1):
+        act_e = e - timedelta(days=7 * (wi - 1))
+        act_s = act_e - timedelta(days=6)
+        pred_e = act_s - timedelta(days=1)
+        pred_s = pred_e - timedelta(days=6)
+        act_days = sum(1 for i in range(7) if _iso(act_s + timedelta(i)) in all_or)
+        pred_days = sum(1 for i in range(7) if _iso(pred_s + timedelta(i)) in all_or)
+        if act_days < 5 or pred_days < 5:
+            continue
+        try:
+            A_prev = analyze(con, _iso(pred_s), _iso(pred_e), scope=scope, store=store)
+        except NoData:
+            continue
+        act_sales = _sales(con, _iso(act_s), _iso(act_e), cat, store=store)
+        scale_act = 7.0 / act_days
+        for r in A_prev['rows']:
+            if r['D'] <= 0:
+                continue
+            actual_wk = (act_sales[r['code']]['qty'] * scale_act) if r['code'] in act_sales else 0.0
+            g = by_grp[r['group']]
+            g['pred'] += r['D']
+            g['actual'] += actual_wk
+            g['abs_err'] += abs(r['D'] - actual_wk)
+            g['skus'] += 1
+    out = []
+    for g, x in sorted(by_grp.items(), key=lambda kv: -kv[1]['actual']):
+        if x['actual'] <= 0:
+            continue
+        bias = 100.0 * (x['pred'] - x['actual']) / x['actual']
+        wape = 100.0 * x['abs_err'] / x['actual']
+        out.append({'group': g, 'pred': x['pred'], 'actual': x['actual'], 'bias_pct': bias, 'wape_pct': wape, 'skus': x['skus']})
+    return out
